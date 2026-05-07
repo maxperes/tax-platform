@@ -1,0 +1,14 @@
+export * from "./fiscal-residence.js";
+export * from "./income-classification.js";
+export * from "./taxable-events.js";
+export * from "./deductions.js";
+export * from "./capital-gain.js";
+export * from "./monthly-carne-leao.js";
+export * from "./tax-calculation.js";
+export * from "./report.js";
+export * from "./fx.js";
+export * from "./progressive.js";
+export * from "./merge-rule-data.js";
+export * from "./engines/index.js";
+export { brRulePack2026, BR_DATA_PACK_ID } from "./data/br/2026.js";
+export { usRulePack2026, US_DATA_PACK_ID } from "./data/us/2026.js";

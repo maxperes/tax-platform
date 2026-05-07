@@ -1,0 +1,327 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  fiscalProfiles       FiscalResidenceProfile[]
+  conversationSessions ConversationSession[]
+  incomeSources        IncomeSource[]
+  taxableEvents        TaxableEvent[]
+  deductions           Deduction[]
+  capitalGainCalcs     CapitalGainCalculation[]
+  monthlyCalcs         MonthlyTaxCalculation[]
+  taxReports           TaxReport[]
+  taxCalculations      TaxCalculation[]
+}
+
+model RuleOverride {
+  id            String   @id @default(uuid())
+  jurisdiction  String
+  taxYear       Int
+  key           String
+  valueJson     Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([jurisdiction, taxYear, key])
+  @@index([taxYear])
+}
+
+model FiscalResidenceProfile {
+  id                     String   @id @default(uuid())
+  userId                 String
+  taxYear                Int
+  data                   Json
+  derivedProfile         String
+  requiresAdditionalReview Boolean @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, taxYear])
+  @@index([userId])
+}
+
+model ConversationSession {
+  id                       String   @id @default(uuid())
+  userId                   String
+  taxYear                  Int
+  state                    String
+  contextJson              Json?
+  requiresAdditionalReview Boolean  @default(false)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  user     User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages ConversationMessage[]
+
+  @@index([userId, taxYear])
+}
+
+model ConversationMessage {
+  id                 String   @id @default(uuid())
+  sessionId          String
+  role               String
+  content            String   @db.Text
+  toolCalls          Json?
+  structuredPayload  Json?
+  createdAt          DateTime @default(now())
+
+  session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+model IncomeSource {
+  id                   String   @id @default(uuid())
+  userId               String
+  taxYear              Int
+  payerName            String
+  originCountry        String
+  incomeType           String
+  grossAmount          Decimal  @db.Decimal(18, 4)
+  originalCurrency     String
+  paymentDate          DateTime @db.Date
+  periodicity          String
+  taxPaidOriginCountry Decimal? @db.Decimal(18, 4)
+  withholdingTax       Decimal? @db.Decimal(18, 4)
+  hasProofDocument     Boolean?
+  destinationAccountHint String?
+  transferredToBrazil  Boolean?
+  remainedAbroad       Boolean?
+  nature               String
+  notes                String?
+  exchangeRateToBrl    Decimal? @db.Decimal(18, 8)
+  grossAmountBrl       Decimal? @db.Decimal(18, 4)
+  classification       Json?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, taxYear])
+}
+
+model TaxableEvent {
+  id               String   @id @default(uuid())
+  userId           String
+  taxYear          Int
+  eventType        String
+  description      String   @db.Text
+  amountOriginal   Decimal? @db.Decimal(18, 4)
+  currency         String?
+  amountBrl        Decimal? @db.Decimal(18, 4)
+  occurredOn       DateTime @db.Date
+  isTaxable        Boolean
+  incomeSourceId   String?
+  requiresReview   Boolean  @default(false)
+  metadata         Json?
+  createdAt        DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, taxYear])
+}
+
+model Deduction {
+  id                 String   @id @default(uuid())
+  userId             String
+  taxYear            Int
+  deductionType      String
+  relatedIncomeId    String?
+  relatedEventId     String?
+  relatedAssetId     String?
+  amount             Decimal  @db.Decimal(18, 4)
+  currency           String
+  exchangeRate       Decimal? @db.Decimal(18, 8)
+  amountBrl          Decimal? @db.Decimal(18, 4)
+  taxPeriod          String
+  applicationScope   String
+  isRecurring        Boolean?
+  isEligible         Boolean?
+  requiresProof      Boolean?
+  proofDocumentUrl   String?
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, taxYear])
+}
+
+model CapitalGainCalculation {
+  id                        String   @id @default(uuid())
+  userId                    String
+  taxYear                   Int
+  assetId                   String?
+  taxEventId                String?
+  assetType                 String
+  assetCountry              String
+  acquisitionDate           DateTime @db.Date
+  acquisitionValue          Decimal  @db.Decimal(18, 4)
+  acquisitionCurrency       String
+  saleDate                  DateTime @db.Date
+  saleValue                 Decimal  @db.Decimal(18, 4)
+  saleCurrency              String
+  ownershipPercentageSold   Decimal  @db.Decimal(5, 2)
+  deductibleExpenses        Decimal  @db.Decimal(18, 4)
+  foreignTaxPaid            Decimal? @db.Decimal(18, 4)
+  proportionalCost        Decimal? @db.Decimal(18, 4)
+  gainAmount                Decimal? @db.Decimal(18, 4)
+  taxEstimate               Decimal? @db.Decimal(18, 4)
+  ruleVersion               String
+  jurisdiction            String   @default("BR")
+  dataPackVersion           String?
+  requiresAdditionalReview  Boolean  @default(false)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, taxYear])
+}
+
+model MonthlyTaxCalculation {
+  id                       String   @id @default(uuid())
+  userId                   String
+  taxYear                  Int
+  taxMonth                 Int
+  fiscalResidenceStatus    String?
+  totalForeignIncome       Decimal? @db.Decimal(18, 4)
+  totalForeignIncomeBrl    Decimal? @db.Decimal(18, 4)
+  totalDeductions          Decimal? @db.Decimal(18, 4)
+  totalExemptions          Decimal? @db.Decimal(18, 4)
+  taxableBase              Decimal  @db.Decimal(18, 4)
+  appliedTaxRate           Decimal  @db.Decimal(8, 6)
+  grossTax                 Decimal  @db.Decimal(18, 4)
+  foreignTaxPaid           Decimal? @db.Decimal(18, 4)
+  estimatedTaxCredit       Decimal? @db.Decimal(18, 4)
+  netTaxDue                Decimal  @db.Decimal(18, 4)
+  calculationStatus        String
+  requiresAdditionalReview Boolean  @default(false)
+  ruleVersion              String
+  jurisdiction           String   @default("BR")
+  dataPackVersion          String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  user  User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items MonthlyTaxCalculationItem[]
+
+  @@unique([userId, taxYear, taxMonth])
+  @@index([userId, taxYear])
+}
+
+model MonthlyTaxCalculationItem {
+  id                       String   @id @default(uuid())
+  monthlyTaxCalculationId String
+  incomeSourceId          String?
+  taxEventId              String?
+  incomeType              String
+  originCountry           String
+  paymentDate             DateTime @db.Date
+  originalAmount          Decimal  @db.Decimal(18, 4)
+  originalCurrency        String
+  exchangeRate            Decimal  @db.Decimal(18, 8)
+  amountBrl               Decimal  @db.Decimal(18, 4)
+  foreignTaxPaid          Decimal? @db.Decimal(18, 4)
+  deductionAmount         Decimal? @db.Decimal(18, 4)
+  exemptionAmount         Decimal? @db.Decimal(18, 4)
+  taxableAmount           Decimal  @db.Decimal(18, 4)
+  calculatedTax           Decimal  @db.Decimal(18, 4)
+  requiresReview          Boolean  @default(false)
+  notes                     String?
+  createdAt                 DateTime @default(now())
+
+  monthly MonthlyTaxCalculation @relation(fields: [monthlyTaxCalculationId], references: [id], onDelete: Cascade)
+
+  @@index([monthlyTaxCalculationId])
+}
+
+model TaxCalculation {
+  id                       String   @id @default(uuid())
+  userId                   String
+  taxYear                  Int
+  calculationType          String
+  grossIncome              Decimal  @db.Decimal(18, 4)
+  deductionsTotal          Decimal  @db.Decimal(18, 4)
+  exemptionsTotal          Decimal  @db.Decimal(18, 4)
+  taxableBase              Decimal  @db.Decimal(18, 4)
+  appliedRate              Decimal  @db.Decimal(8, 6)
+  grossTax                 Decimal  @db.Decimal(18, 4)
+  foreignTaxPaid           Decimal? @db.Decimal(18, 4)
+  taxCreditApplied         Decimal? @db.Decimal(18, 4)
+  netTaxDue                Decimal  @db.Decimal(18, 4)
+  currency                 String
+  calculationStatus        String
+  requiresAdditionalReview Boolean  @default(false)
+  ruleVersion                String
+  jurisdiction             String   @default("BR")
+  dataPackVersion            String?
+  feieApplied                Decimal? @db.Decimal(18, 4)
+  ftcApplied                 Decimal? @db.Decimal(18, 4)
+  niit                       Decimal? @db.Decimal(18, 4)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, taxYear])
+}
+
+model TaxReport {
+  id                       String   @id @default(uuid())
+  userId                   String
+  taxYear                  Int
+  title                    String
+  summaryJson              Json
+  requiresAdditionalReview Boolean  @default(false)
+  ruleVersion              String
+  jurisdiction             String?  @db.VarChar(16)
+  dataPackVersion          String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sections TaxReportSection[]
+
+  @@index([userId, taxYear])
+}
+
+model TaxReportSection {
+  id            String   @id @default(uuid())
+  taxReportId   String
+  title         String
+  bodyMarkdown  String?  @db.Text
+  payload       Json?
+  sortOrder     Int      @default(0)
+
+  report TaxReport @relation(fields: [taxReportId], references: [id], onDelete: Cascade)
+  items  TaxReportItem[]
+
+  @@index([taxReportId])
+}
+
+model TaxReportItem {
+  id                String @id @default(uuid())
+  taxReportSectionId String
+  label             String
+  valueJson         Json
+
+  section TaxReportSection @relation(fields: [taxReportSectionId], references: [id], onDelete: Cascade)
+
+  @@index([taxReportSectionId])
+}

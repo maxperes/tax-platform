@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tax
+      POSTGRES_PASSWORD: tax
+      POSTGRES_DB: tax_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - tax_pg_data:/var/lib/postgresql/data
+
+volumes:
+  tax_pg_data:

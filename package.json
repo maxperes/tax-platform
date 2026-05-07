@@ -1,0 +1,26 @@
+{
+  "name": "tax-platform",
+  "private": true,
+  "scripts": {
+    "build": "pnpm --filter @tax-platform/shared build && pnpm --filter @tax-platform/rules build && pnpm --filter @tax-platform/api build && pnpm --filter @tax-platform/web build",
+    "dev": "pnpm --parallel --filter @tax-platform/api --filter @tax-platform/web run dev",
+    "dev:api": "pnpm --filter @tax-platform/api dev",
+    "dev:web": "pnpm --filter @tax-platform/web dev",
+    "lint": "pnpm -r run lint",
+    "test": "pnpm -r run test",
+    "db:generate": "dotenv -e .env -- pnpm --filter @tax-platform/api exec prisma generate",
+    "db:migrate": "dotenv -e .env -- pnpm --filter @tax-platform/api exec prisma migrate dev",
+    "db:push": "dotenv -e .env -- pnpm --filter @tax-platform/api exec prisma db push"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "dotenv-cli": "^8.0.0",
+    "eslint": "^9.18.0",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.21.0"
+  }
+}
