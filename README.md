@@ -34,10 +34,14 @@ Conversational tax intake (Brazil–US oriented) with a deterministic rules laye
 4. Apply database schema:
 
    ```bash
-   pnpm db:push
+   pnpm db:migrate:deploy
    ```
 
-   After pulling changes, run **`pnpm db:push`** again if Prisma errors mention a missing column (for example `MonthlyTaxCalculation.jurisdiction`). For an **empty** database you can use **`pnpm db:migrate`** instead; if `migrate deploy` reports the database is not empty (P3005), keep using **`pnpm db:push`** for local dev or follow [Prisma baselining](https://www.prisma.io/docs/guides/migrate/developing-with-prisma-migrate/baselining-a-database).
+   For local iteration you can still use **`pnpm db:push`** instead. Production (Docker / Railway) runs **`prisma migrate deploy`** on startup via `docker-entry.sh`.
+
+   **Existing local DB created with `db push`?** Either keep using **`pnpm db:push`**, or baseline migrations: `pnpm db:migrate:deploy` on an empty DB, or mark migrations applied with `prisma migrate resolve --applied <name>` — see [Prisma baselining](https://www.prisma.io/docs/guides/migrate/developing-with-prisma-migrate/baselining-a-database).
+
+   **Railway deploy failed with P3009 / missing tables?** Reset the Postgres service (pilot has no data to keep), redeploy the app, and `migrate deploy` will apply `20260206180000_init` then the incremental migration.
 
 5. Run API and web:
 

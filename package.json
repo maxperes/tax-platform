@@ -10,6 +10,7 @@
     "test": "pnpm -r run test",
     "db:generate": "dotenv -e .env -- pnpm --filter @tax-platform/api exec prisma generate",
     "db:migrate": "dotenv -e .env -- pnpm --filter @tax-platform/api exec prisma migrate dev",
+    "db:migrate:deploy": "dotenv -e .env -- pnpm --filter @tax-platform/api exec prisma migrate deploy",
     "db:push": "dotenv -e .env -- pnpm --filter @tax-platform/api exec prisma db push"
   },
   "engines": {
