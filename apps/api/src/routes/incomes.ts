@@ -4,13 +4,17 @@ import { incomeSourceSchema } from "@tax-platform/shared";
 import { classifyIncome } from "@tax-platform/rules";
 import { prisma } from "../db.js";
 import { authMiddleware } from "../middleware/auth.js";
-import type { Prisma } from "@prisma/client";
-import type { FiscalProfile } from "@tax-platform/shared";
+import { asyncHandler } from "../middleware/async-handler.js";
+import {
+  classifiedIncomeUpdateData,
+  createClassifiedIncome,
+  getFiscalProfile
+} from "../services/persistence/income.js";
 
 export const incomesRouter = Router();
 incomesRouter.use(authMiddleware);
 
-incomesRouter.post("/", async (req, res) => {
+incomesRouter.post("/", asyncHandler(async (req, res) => {
   const body = z
     .object({
       taxYear: z.number().int(),
@@ -18,48 +22,19 @@ incomesRouter.post("/", async (req, res) => {
     })
     .parse(req.body);
 
-  const fp = await prisma.fiscalResidenceProfile.findUnique({
-    where: { userId_taxYear: { userId: req.user!.sub, taxYear: body.taxYear } }
-  });
-  const profile = (fp?.derivedProfile ?? "undetermined") as FiscalProfile;
-  const classified = classifyIncome(body.income, profile);
-
-  const row = await prisma.incomeSource.create({
-    data: {
-      userId: req.user!.sub,
-      taxYear: body.taxYear,
-      payerName: classified.payerName,
-      originCountry: classified.originCountry,
-      incomeType: classified.incomeType,
-      grossAmount: classified.grossAmount,
-      originalCurrency: classified.originalCurrency,
-      paymentDate: new Date(classified.paymentDate),
-      periodicity: classified.periodicity,
-      taxPaidOriginCountry: classified.taxPaidOriginCountry ?? null,
-      withholdingTax: classified.withholdingTax ?? null,
-      hasProofDocument: classified.hasProofDocument ?? null,
-      destinationAccountHint: classified.destinationAccountHint ?? null,
-      transferredToBrazil: classified.transferredToBrazil ?? null,
-      remainedAbroad: classified.remainedAbroad ?? null,
-      nature: classified.nature,
-      notes: classified.notes ?? null,
-      exchangeRateToBrl: classified.exchangeRateToBrl ?? null,
-      grossAmountBrl: classified.grossAmountBrl ?? null,
-      classification: classified.classification as Prisma.InputJsonValue
-    }
-  });
+  const row = await createClassifiedIncome(req.user!.sub, body.taxYear, body.income);
   res.status(201).json(row);
-});
+}));
 
-incomesRouter.get("/", async (req, res) => {
+incomesRouter.get("/", asyncHandler(async (req, res) => {
   const taxYear = z.coerce.number().int().parse(req.query.taxYear);
   const rows = await prisma.incomeSource.findMany({
     where: { userId: req.user!.sub, taxYear }
   });
   res.json(rows);
-});
+}));
 
-incomesRouter.put("/:id", async (req, res) => {
+incomesRouter.put("/:id", asyncHandler(async (req, res) => {
   const body = z
     .object({
       taxYear: z.number().int(),
@@ -68,49 +43,27 @@ incomesRouter.put("/:id", async (req, res) => {
     .parse(req.body);
 
   const current = await prisma.incomeSource.findFirst({
-    where: { id: req.params.id, userId: req.user!.sub, taxYear: body.taxYear }
+    where: { id: String(req.params.id), userId: req.user!.sub, taxYear: body.taxYear }
   });
   if (!current) {
     res.status(404).json({ error: "Income row not found" });
     return;
   }
 
-  const fp = await prisma.fiscalResidenceProfile.findUnique({
-    where: { userId_taxYear: { userId: req.user!.sub, taxYear: body.taxYear } }
-  });
-  const profile = (fp?.derivedProfile ?? "undetermined") as FiscalProfile;
+  const profile = await getFiscalProfile(req.user!.sub, body.taxYear);
   const classified = classifyIncome(body.income, profile);
 
   const row = await prisma.incomeSource.update({
     where: { id: current.id },
-    data: {
-      payerName: classified.payerName,
-      originCountry: classified.originCountry,
-      incomeType: classified.incomeType,
-      grossAmount: classified.grossAmount,
-      originalCurrency: classified.originalCurrency,
-      paymentDate: new Date(classified.paymentDate),
-      periodicity: classified.periodicity,
-      taxPaidOriginCountry: classified.taxPaidOriginCountry ?? null,
-      withholdingTax: classified.withholdingTax ?? null,
-      hasProofDocument: classified.hasProofDocument ?? null,
-      destinationAccountHint: classified.destinationAccountHint ?? null,
-      transferredToBrazil: classified.transferredToBrazil ?? null,
-      remainedAbroad: classified.remainedAbroad ?? null,
-      nature: classified.nature,
-      notes: classified.notes ?? null,
-      exchangeRateToBrl: classified.exchangeRateToBrl ?? null,
-      grossAmountBrl: classified.grossAmountBrl ?? null,
-      classification: classified.classification as Prisma.InputJsonValue
-    }
+    data: classifiedIncomeUpdateData(req.user!.sub, body.taxYear, classified)
   });
   res.json(row);
-});
+}));
 
-incomesRouter.delete("/:id", async (req, res) => {
+incomesRouter.delete("/:id", asyncHandler(async (req, res) => {
   const taxYear = z.coerce.number().int().parse(req.query.taxYear);
   const current = await prisma.incomeSource.findFirst({
-    where: { id: req.params.id, userId: req.user!.sub, taxYear }
+    where: { id: String(req.params.id), userId: req.user!.sub, taxYear }
   });
   if (!current) {
     res.status(404).json({ error: "Income row not found" });
@@ -118,4 +71,4 @@ incomesRouter.delete("/:id", async (req, res) => {
   }
   await prisma.incomeSource.delete({ where: { id: current.id } });
   res.status(204).send();
-});
+}));

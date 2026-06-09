@@ -102,8 +102,8 @@ const tools: OpenAI.Chat.ChatCompletionTool[] = [
               "fiscal_residence",
               "income_capture",
               "events",
-              "deductions",
               "capital_gain",
+              "deductions",
               "monthly_calc",
               "report",
               "complete"

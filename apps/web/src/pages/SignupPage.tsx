@@ -1,13 +1,19 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useAuthConfig } from "../auth-config";
 import { api, setToken } from "../api";
 
 export function SignupPage() {
   const nav = useNavigate();
+  const { registrationEnabled } = useAuthConfig();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  if (!registrationEnabled) {
+    return null;
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();

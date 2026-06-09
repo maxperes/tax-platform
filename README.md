@@ -68,11 +68,41 @@ Database schema lives in [apps/api/prisma/schema.prisma](apps/api/prisma/schema.
 
 Bump **`ENGINE_VERSION`** when algorithm code changes; bump **`DATA_PACK_*`** (and table contents) when statutory numbers change. Confirm all rates with a tax SME before production.
 
+**US estimate MVP simplifications:** annual US estimates currently assume `filingStatus: "single"`, default FEIE/NIIT inputs to zero, and use a flat 15% capital-gains rate. Expand these when the US filing path goes live.
+
+## Private launch (Shopify)
+
+For an invite-only pilot linked from a Shopify store, deploy the app to a stable URL (e.g. `https://tax.yourbrand.com`) with `WEB_DIST` set so the UI and API share one origin. In production, set:
+
+- `REGISTRATION_ENABLED=false` — blocks public signup (default is **closed** when `NODE_ENV=production` and the variable is unset)
+- `JWT_SECRET` — strong random value (required in production)
+- `ADMIN_TOKEN` — strong random value (required for `POST /api/admin/users`)
+
+**Provision accounts** (share credentials with invited users out-of-band):
+
+```bash
+pnpm --filter @tax-platform/api create-user -- email@example.com 'secure-password'
+```
+
+Or via HTTP (no user JWT required; admin token only):
+
+```bash
+curl -X POST https://tax.yourbrand.com/api/admin/users \
+  -H "Content-Type: application/json" \
+  -H "x-admin-token: $ADMIN_TOKEN" \
+  -d '{"email":"email@example.com","password":"secure-password"}'
+```
+
+**Shopify setup:** In Shopify admin → Online Store → Navigation, add a menu item pointing to `https://tax.yourbrand.com/login`. Optionally create a store page with a button linking to the same URL.
+
+The login URL is public; access control comes from only provisioning accounts you intend to invite. When you are ready to open self-service signup, set `REGISTRATION_ENABLED=true`.
+
 ## Main API routes
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/auth/register` | Register |
+| GET | `/api/auth/config` | Public auth flags (`registrationEnabled`) |
+| POST | `/api/auth/register` | Register (403 when registration disabled) |
 | POST | `/api/auth/login` | Login |
 | POST | `/api/sessions` | Create conversation session |
 | GET | `/api/sessions/:id` | Session + messages |
@@ -89,6 +119,7 @@ Bump **`ENGINE_VERSION`** when algorithm code changes; bump **`DATA_PACK_*`** (a
 | GET | `/api/report/latest?taxYear=` | Latest report id/title for the user and year |
 | GET | `/api/report/:id` | Fetch report JSON |
 | GET | `/api/report/:id/download` | Download report as JSON file |
+| POST | `/api/admin/users` | Create user (`ADMIN_TOKEN` + `x-admin-token`; no user JWT) |
 | GET | `/api/admin/rule-overrides` | List merged rule overrides (optional `ADMIN_TOKEN` + `x-admin-token`) |
 
 ## Scripts

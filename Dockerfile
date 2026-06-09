@@ -5,14 +5,10 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY apps/api/package.json apps/api/
-COPY apps/web/package.json apps/web/
-COPY packages/shared/package.json packages/shared/
-COPY packages/rules/package.json packages/rules/
-RUN pnpm install --frozen-lockfile
-
+COPY tsconfig.base.json ./
 COPY packages ./packages
 COPY apps ./apps
+RUN pnpm install --frozen-lockfile
 
 RUN pnpm --filter @tax-platform/shared build \
   && pnpm --filter @tax-platform/rules build \
@@ -30,9 +26,12 @@ ENV PORT=8080
 ENV WEB_DIST=/app/apps/web/dist
 
 COPY --from=builder /app /app
+COPY docker-entry.sh /app/docker-entry.sh
+RUN chmod +x /app/docker-entry.sh
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-CMD ["sh", "-c", "cd apps/api && pnpm exec prisma migrate deploy && exec node dist/index.js"]
+# Same flow as before: migrate deploy then node. IAM: migrate uses a one-off token (print-database-url.js).
+CMD ["/app/docker-entry.sh"]

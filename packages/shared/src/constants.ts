@@ -6,8 +6,10 @@ export const DATA_PACK_BR_2026 = "br-2026-1";
 export const DATA_PACK_US_2026 = "us-2026-1";
 
 /** Full stamp persisted on calculations/reports: engine + data pack id (e.g. br-2026-1). */
-export function buildRuleVersionStamp(dataPackId: string): string {
-  return `engine@${ENGINE_VERSION}+data@${dataPackId}`;
+export function buildRuleVersionStamp(dataPackId: string, overrideFingerprint?: string): string {
+  const base = `engine@${ENGINE_VERSION}+data@${dataPackId}`;
+  if (!overrideFingerprint) return base;
+  return `${base}+overrides@${overrideFingerprint}`;
 }
 
 /** Default stamp for BR data pack (backward compatible export name). */
@@ -17,8 +19,8 @@ export const CONVERSATION_STATES = [
   "fiscal_residence",
   "income_capture",
   "events",
-  "deductions",
   "capital_gain",
+  "deductions",
   "monthly_calc",
   "report",
   "complete"

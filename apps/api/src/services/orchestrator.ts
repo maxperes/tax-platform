@@ -3,32 +3,12 @@ import {
   incomeSourceSchema,
   deductionSchema,
   capitalGainCalculationSchema,
-  type ConversationState,
-  type FiscalProfile,
-  buildRuleVersionStamp,
-  DATA_PACK_BR_2026,
-  DATA_PACK_US_2026
+  type ConversationState
 } from "@tax-platform/shared";
-import {
-  deriveFiscalProfile,
-  classifyIncome,
-  detectTaxableEventsFromIncomes,
-  validateDeductionForMvp,
-  computeCapitalGain,
-  aggregateMonthlyCarnetLeao,
-  buildTaxReportSummary,
-  jurisdictionsForProfile,
-  getBrRulePack,
-  getUsRulePack,
-  buildBrAnnualEstimate,
-  buildUsAnnualEstimate,
-  applyCarneLeaoTaxToItems,
-  resolveBrlFromIncome,
-  resolveUsdFromIncome
-} from "@tax-platform/rules";
-import type { Prisma, TaxCalculation } from "@prisma/client";
+import { deriveFiscalProfile } from "@tax-platform/rules";
+import type { Prisma } from "@prisma/client";
 import type OpenAI from "openai";
-import type { FiscalResidence, IncomeSource } from "@tax-platform/shared";
+import type { FiscalResidence } from "@tax-platform/shared";
 import { prisma } from "../db.js";
 import { rewriteSafeResponse, runAssistantWithTools } from "./llm.js";
 import { config } from "../config.js";
@@ -46,14 +26,51 @@ import {
 } from "./conversation-state-heal.js";
 import { parseRewindTargetStep } from "./conversation-rewind.js";
 import {
-  isEventsSkipIntent,
-  lastAssistantAskedEventNoneConfirmation
-} from "./taxable-events-none.js";
-import {
   assistantAcknowledgesNoTaxableEvents,
   isExplicitGenerateReportIntent,
   lastAssistantOfferedSummary
 } from "./summary-offer.js";
+import { createClassifiedIncome } from "./persistence/income.js";
+import { createDeduction } from "./persistence/deduction.js";
+import { createCapitalGainCalculation } from "./persistence/capital-gain.js";
+import { buildAndSaveReport, getLatestTaxCalculationSnapshot } from "./tax-pipeline.js";
+import {
+  describeModulePlanForUser,
+  eventsCheckpointMessage,
+  formatCapitalGainsBlockForRecap,
+  formatMissingDataChecklist,
+  formatMonthlySummaryBlockForRecap,
+  formatMonthlyTaxForRecap,
+  applyProfileAwareAdvance,
+  isCapitalGainSkipIntent,
+  isEventsConfirmIntent,
+  isMonthlyCalcConfirmIntent,
+  isProceedAnywayIntent,
+  isTriagePending,
+  isUsFilingPending,
+  loadIntakeModulePlan,
+  nextActionsBlock,
+  nextStateAfterCapitalGain,
+  nextStateAfterDeductions,
+  nextStateAfterEvents,
+  parseIntakeGoal,
+  parseUsFilingInputs,
+  resolveIncomeGaps,
+  specialistHandoffBlock,
+  triagePromptText,
+  usFilingPromptText,
+  type IntakeModulePlan
+} from "./intake-helpers.js";
+import {
+  coerceFiscalBooleansInPlace,
+  coerceFiscalFieldValue,
+  firstFiscalFieldPrompt,
+  getActiveFiscalFieldOrder,
+  getFiscalQuestionForContext,
+  isValidFiscalFieldValue,
+  looksLikeFiscalFieldAnswer,
+  prepareFiscalPayloadForValidation
+} from "./fiscal-intake.js";
 
 /** Parsed payment-line text can create IncomeSource rows without rewinding from Done. */
 const STATES_ALLOWING_CHAT_INCOME_AMENDMENT = new Set<ConversationState>([
@@ -68,24 +85,6 @@ const STATES_ALLOWING_CHAT_INCOME_AMENDMENT = new Set<ConversationState>([
 
 const FISCAL_PROFILE_CONFIRM_PENDING_KEY = "_fiscalProfileConfirmPending";
 
-const FISCAL_FIELD_ORDER: { key: string; prompt: string }[] = [
-  { key: "nationalityCountry", prompt: "What is your country of nationality (ISO code, e.g. BR, US)?" },
-  { key: "currentResidenceCountry", prompt: "Which country do you currently live in (ISO code)?" },
-  { key: "birthDate", prompt: "What is your date of birth (YYYY-MM-DD)?" },
-  { key: "primaryCurrency", prompt: "What is your main currency for reporting (ISO, e.g. BRL, USD)?" },
-  {
-    key: "isFiscalResidentBrazil",
-    prompt: "Are you a fiscal resident of Brazil for tax purposes? (yes/no)"
-  },
-  { key: "isFiscalResidentUSA", prompt: "Are you a fiscal resident of the United States? (yes/no)" },
-  {
-    key: "fiscalResidenceOtherCountry",
-    prompt: "Do you have fiscal residence in any other country besides Brazil and the USA? (yes/no)"
-  },
-  { key: "fullName", prompt: "Great, now what is your full legal name?" },
-  { key: "email", prompt: "And what email should we use for your account notifications?" }
-];
-
 function getContext(session: { contextJson: Prisma.JsonValue | null }): Record<string, unknown> {
   return (session.contextJson as Record<string, unknown>) ?? {};
 }
@@ -97,29 +96,83 @@ function parseBool(text: string): boolean | undefined {
   return undefined;
 }
 
-function normalizeDateInput(raw: string): string | undefined {
-  const t = raw.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
-  const mmddyyyy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(t);
-  if (!mmddyyyy) return undefined;
-  const month = Number(mmddyyyy[1]);
-  const day = Number(mmddyyyy[2]);
-  const year = Number(mmddyyyy[3]);
-  if (month < 1 || month > 12 || day < 1 || day > 31) return undefined;
-  const mm = String(month).padStart(2, "0");
-  const dd = String(day).padStart(2, "0");
-  return `${year}-${mm}-${dd}`;
+/**
+ * When the LLM omits the user's answer in submit_fiscal_residence, merge the raw message
+ * into the first missing fiscal field if it matches that field's shape.
+ */
+function fuseUserMessageIntoFiscalContext(
+  context: Record<string, unknown>,
+  userContent: string
+): Record<string, unknown> | null {
+  if (isFiscalProfileConfirmPending(context)) return null;
+  const t = userContent.trim();
+  if (!t) return null;
+  const merged = getFiscalResidenceMergedFields(context);
+  const expectedKey = getActiveFiscalFieldOrder(merged).find((f) => !isValidFiscalFieldValue(f.key, merged[f.key]))
+    ?.key;
+  if (!expectedKey) return null;
+  if (!looksLikeFiscalFieldAnswer(expectedKey, t)) return null;
+  const next = { ...context, [expectedKey]: coerceFiscalFieldValue(expectedKey, t) };
+  coerceFiscalBooleansInPlace(next);
+  return next;
 }
 
-function coerceValue(key: string, raw: string): unknown {
-  if (key === "fiscalResidenceOtherCountry" || key.startsWith("is")) {
-    const b = parseBool(raw);
-    if (b !== undefined) return b;
+type FiscalCompleteResult = {
+  context: Record<string, unknown>;
+  state: ConversationState;
+  requiresAdditionalReview: boolean;
+};
+
+async function completeFiscalProfileAndDetermineNext(
+  userId: string,
+  taxYear: number,
+  parsed: FiscalResidence,
+  existingCtx: Record<string, unknown>
+): Promise<FiscalCompleteResult> {
+  const profile = deriveFiscalProfile(parsed);
+  await prisma.fiscalResidenceProfile.upsert({
+    where: { userId_taxYear: { userId, taxYear } },
+    create: {
+      userId,
+      taxYear,
+      data: parsed as Prisma.InputJsonValue,
+      derivedProfile: profile.profile,
+      requiresAdditionalReview: profile.requiresAdditionalReview
+    },
+    update: {
+      data: parsed as Prisma.InputJsonValue,
+      derivedProfile: profile.profile,
+      requiresAdditionalReview: profile.requiresAdditionalReview
+    }
+  });
+  const ctx: Record<string, unknown> = {
+    ...existingCtx,
+    incomes: [],
+    fiscalResidence: parsed,
+    intakeGoal: existingCtx.intakeGoal
+  };
+  delete ctx._lastAskedKey;
+  const needsUs = profile.profile === "resident_usa" || profile.profile === "dual_residence";
+  if (needsUs && !ctx.usFilingInputs) {
+    ctx._usFilingPending = true;
+    return { context: ctx, state: "fiscal_residence", requiresAdditionalReview: profile.requiresAdditionalReview };
   }
-  if (key === "birthDate") {
-    return normalizeDateInput(raw) ?? raw.trim();
+  delete ctx._usFilingPending;
+  return { context: ctx, state: "income_capture", requiresAdditionalReview: profile.requiresAdditionalReview };
+}
+
+async function tryCompleteFiscalResidenceFromContext(
+  userId: string,
+  taxYear: number,
+  ctx: Record<string, unknown>
+): Promise<FiscalCompleteResult | null> {
+  const merged = prepareFiscalPayloadForValidation(getFiscalResidenceMergedFields(ctx));
+  for (const { key } of getActiveFiscalFieldOrder(merged)) {
+    if (!isValidFiscalFieldValue(key, merged[key])) return null;
   }
-  return raw.trim();
+  const parsed = fiscalResidenceSchema.safeParse(merged);
+  if (!parsed.success) return null;
+  return completeFiscalProfileAndDetermineNext(userId, taxYear, parsed.data, ctx);
 }
 
 /** Flatten nested `fiscalResidence` and map common LLM alias keys to RF-001 names. */
@@ -154,32 +207,20 @@ function normalizeFiscalAliasKeys(obj: Record<string, unknown>): Record<string, 
 
 function expandFiscalResidenceToolPayload(data: Record<string, unknown>): Record<string, unknown> {
   const nested = data.fiscalResidence;
-  const { fiscalResidence: _drop, ...rest } = data;
-  let flat: Record<string, unknown> = { ...rest };
+  const rest = { ...data };
+  delete rest.fiscalResidence;
+  let flat: Record<string, unknown> = rest;
   if (nested && typeof nested === "object" && !Array.isArray(nested)) {
     flat = { ...(nested as Record<string, unknown>), ...flat };
   }
   return normalizeFiscalAliasKeys(flat);
 }
 
-function coerceFiscalBooleansInPlace(ctx: Record<string, unknown>): void {
-  for (const k of ["isFiscalResidentBrazil", "isFiscalResidentUSA", "fiscalResidenceOtherCountry"] as const) {
-    const v = ctx[k];
-    if (typeof v === "string") {
-      const b = parseBool(v);
-      if (b !== undefined) ctx[k] = b;
-    }
-  }
-}
-
-function coerceBoolLike(raw: unknown): boolean | undefined {
-  if (typeof raw === "boolean") return raw;
-  if (typeof raw === "string") return parseBool(raw);
-  return undefined;
-}
-
-export function initialAssistantMessage(): string {
-  return `Hi, I will guide you step by step. We will start with the tax-related questions and ask contact details at the end. ${FISCAL_FIELD_ORDER[0].prompt}`;
+export function initialAssistantMessage(taxYear: number): string {
+  return (
+    `Hi, I will guide you step by step for your **${taxYear}** tax intake. We will ask what applies to you first, then tax-related questions, and contact details at the end.\n\n` +
+    triagePromptText()
+  );
 }
 
 function fiscalProfileConfirmPromptText(): string {
@@ -257,8 +298,17 @@ function stripFiscalProfileConfirmFlag(context: Record<string, unknown>): Record
 function buildSystemPrompt(
   state: ConversationState,
   taxYear: number,
-  context: Record<string, unknown>
+  context: Record<string, unknown>,
+  modulePlan?: IntakeModulePlan
 ): string {
+  const planBlock = modulePlan
+    ? `\nModule plan: ${JSON.stringify({
+        profile: modulePlan.derivedProfile,
+        skipMonthly: modulePlan.skipMonthly,
+        needsCarnetLeao: modulePlan.needsCarnetLeao,
+        intakeGoal: modulePlan.intakeGoal
+      })}`
+    : "";
   const incomeCaptureBlock =
     state === "income_capture"
       ? `
@@ -268,11 +318,28 @@ Income capture (critical):
 - Monthly pay: set **periodicity** to **monthly**, **grossAmount** to the monthly gross, **paymentDate** to a representative pay date in ${taxYear} (e.g. last day of a month).
 - If the user lists several payments in one message (e.g. multiple "amount CURRENCY YYYY-MM-DD" lines), call submit_income_source once per payment — never merge multiple dates/amounts into a single tool call.
 - Short lines like **10900 USD per month** may be saved by the server without your tool call; still call **submit_income_source** when you have a complete structured row.
-- Infer missing payer or country only when clearly implied; otherwise ask one short follow-up after saving.`
+- Infer missing payer or country only when clearly implied; otherwise ask one short follow-up after saving.
+- For foreign-currency income under Carnê-Leão, ask for **exchangeRateToBrl** or **grossAmountBrl** before advancing.
+- Ask whether tax was **withheld abroad** (taxPaidOriginCountry) when foreign salary or dividends are involved.`
+      : "";
+
+  const eventsBlock =
+    state === "events"
+      ? `
+Events step: taxable events are **auto-derived from income** — do NOT ask the user to list vesting/sales from scratch. Confirm the derived table; call advance_conversation_state to "capital_gain" when they confirm (or "deductions" if capital gains do not apply to their intake goal).`
+      : "";
+
+  const monthlyBlock =
+    state === "monthly_calc"
+      ? `
+Monthly step: Carnê-Leão totals are pre-computed — help the user review the month table. Advance to "report" when they confirm.`
       : "";
 
   return `You are a warm, concise tax intake assistant for year ${taxYear}. Current workflow step: ${state}.
+${planBlock}
 ${incomeCaptureBlock}
+${eventsBlock}
+${monthlyBlock}
 
 Hard scope rules:
 - ONLY help the user complete this intake workflow (collecting structured answers, clarifying unclear answers, and explaining what the NEXT question is asking).
@@ -280,15 +347,19 @@ Hard scope rules:
 - Do NOT answer unrelated questions (general knowledge, news, coding, entertainment, personal advice, politics, sports, recipes, etc.). If the user asks something unrelated, refuse briefly and return to the current intake task.
 - Do NOT compute or guarantee final tax outcomes; never present numbers as definitive filing results.
 - In fiscal_residence, prioritize tax-relevant fields first and leave name/email for the final part of that step.
-- In fiscal_residence, do NOT ask for a full postal address, street, apartment, or similar. Only ask for fields that exist in the fiscal residence schema (e.g. ISO country codes, birth date, currency, yes/no residency questions, then name and email at the end). If the user offers an address, thank them and say we will capture address details later if needed — continue with the next schema question.
+- In fiscal_residence, do NOT ask for a full postal address, street, apartment, or similar. Only ask for fields that exist in the fiscal residence schema (e.g. ISO country codes, birth date, yes/no residency questions, conditional tie-breakers for complex cases, then name and email at the end). Reporting currency is inferred from residence — do not ask for primaryCurrency. If the user offers an address, thank them and say we will capture address details later if needed — continue with the next schema question.
+- In fiscal_residence, after fiscal data is complete, US residents may be asked filing status (single/mfj/hoh) before income — not during income_capture.
 - In fiscal_residence, after **each** user message you MUST call **submit_fiscal_residence** with \`data\` containing **every** fiscal field gathered so far (copy from Context so far, then add or update the latest answer). Sending only the last field drops prior answers from the session.
 
 Never compute final taxes yourself. Use function tools to save structured data.
 - When the user says next step, continue, or similar, call the advance_conversation_state tool if the current step is complete; otherwise briefly say what is still missing.
 - Whenever you move the user to a different workflow step, you MUST call advance_conversation_state with the correct nextState in the same turn. Do not only describe the new step in text — the UI reads the tool-updated step.
-- advance_conversation_state must never request a step earlier in the flow than the current one (e.g. do not go from deductions back to events).
+- advance_conversation_state must never request a step earlier in the flow than the current one (e.g. do not go from capital_gain back to events).
 - In income_capture, if the user clearly signals they are finished listing incomes (e.g. "that's all", "no more income", "I'm done"), call advance_conversation_state with nextState "events" without insisting on another income row.
-- In events, if the user confirms there are no taxable events (e.g. "none", "no taxable events", "nothing to report"), call advance_conversation_state with nextState "deductions" — do not repeat the same question.
+- In events, the user confirms **derived** taxable events (e.g. "looks correct", "yes") — call advance_conversation_state with nextState "capital_gain" (or "deductions" when capital gains are skipped for their intake goal).
+- In capital_gain, if the user had no asset sales (e.g. "no capital gains", "none"), call advance_conversation_state with nextState "deductions".
+- In deductions, if the user has no deductions (e.g. "no deductions", "none"), call advance_conversation_state to the next applicable step (monthly_calc or report if monthly is skipped).
+- In monthly_calc, when the user confirms monthly totals, call advance_conversation_state with nextState "report".
 - If you asked whether to summarize (or to move to the report step with a summary) and the user clearly agrees (e.g. "yes"), call advance_conversation_state to "complete" after saving the report—do not repeat the same question or claim you are stuck in a cycle. Do not leave them on report with only a generic "current step" line.
 - On the report step, if the user asks to generate, build, or finalize the report in their own words, save the report and advance to complete—do not ask again for permission to summarize unless something is still missing.
 - From **complete**, the user may say they want to **go back** to an earlier step (income, deductions, report, etc.) to edit—the server may move them back; do not insist they only start a brand-new chat unless they ask for that.
@@ -314,45 +385,17 @@ function getFiscalResidenceMergedFields(context: Record<string, unknown>): Recor
   return merged;
 }
 
-function isValidFiscalResidenceFieldValue(key: string, raw: unknown): boolean {
-  if (key === "isFiscalResidentBrazil" || key === "isFiscalResidentUSA" || key === "fiscalResidenceOtherCountry") {
-    return coerceBoolLike(raw) !== undefined;
-  }
-  if (typeof raw !== "string") return false;
-  const t = raw.trim();
-  if (key === "nationalityCountry" || key === "currentResidenceCountry") return t.length >= 2;
-  if (key === "birthDate") return /^\d{4}-\d{2}-\d{2}$/.test(t);
-  if (key === "primaryCurrency") return /^[A-Za-z]{3}$/.test(t);
-  if (key === "fullName") return t.length >= 1;
-  if (key === "email") return fiscalResidenceSchema.shape.email.safeParse(t).success;
-  return false;
-}
-
 function getFiscalResidenceCurrentQuestion(context: Record<string, unknown>): string {
   if (isFiscalProfileConfirmPending(context)) {
     return fiscalProfileConfirmPromptText();
   }
-  const merged = getFiscalResidenceMergedFields(context);
-  for (const { key, prompt } of FISCAL_FIELD_ORDER) {
-    if (!isValidFiscalResidenceFieldValue(key, merged[key])) {
-      return prompt;
-    }
+  if (isTriagePending(context)) {
+    return triagePromptText();
   }
-  return "Say **next step** when you are ready to continue to income sources.";
-}
-
-function looksLikeFiscalResidenceAnswer(key: string, text: string): boolean {
-  const t = text.trim();
-  if (!t) return false;
-  if (key === "isFiscalResidentBrazil" || key === "isFiscalResidentUSA" || key === "fiscalResidenceOtherCountry") {
-    return parseBool(t) !== undefined;
+  if (context._usFilingPending === true) {
+    return usFilingPromptText();
   }
-  if (key === "email") return t.includes("@") && t.includes(".");
-  if (key === "birthDate") return normalizeDateInput(t) !== undefined;
-  if (key === "primaryCurrency") return /^[A-Za-z]{3}$/.test(t);
-  if (key === "nationalityCountry" || key === "currentResidenceCountry") return /^[A-Za-z]{2,3}$/.test(t);
-  if (key === "fullName") return /[A-Za-zÀ-ÿ]/.test(t) && t.length >= 2;
-  return true;
+  return getFiscalQuestionForContext(getFiscalResidenceMergedFields(context));
 }
 
 function isLikelyOffTopicUserMessage(
@@ -371,14 +414,23 @@ function isLikelyOffTopicUserMessage(
   if (parsePaymentLines(t).length >= 1) return false;
 
   if (state === "fiscal_residence") {
+    if (isTriagePending(context)) {
+      if (parseIntakeGoal(t)) return false;
+      return true;
+    }
     if (isFiscalProfileConfirmPending(context)) {
       if (isConfirmUseStoredFiscalProfile(t) || isConfirmReplaceFiscalProfile(t)) return false;
       return true;
     }
+    if (context._usFilingPending === true) {
+      if (parseUsFilingInputs(t)) return false;
+      return true;
+    }
     const merged = getFiscalResidenceMergedFields(context);
-    const expectedKey = FISCAL_FIELD_ORDER.find((f) => !isValidFiscalResidenceFieldValue(f.key, merged[f.key]))?.key;
+    const expectedKey = getActiveFiscalFieldOrder(merged).find((f) => !isValidFiscalFieldValue(f.key, merged[f.key]))
+      ?.key;
     if (!expectedKey) return false;
-    return !looksLikeFiscalResidenceAnswer(expectedKey, t);
+    return !looksLikeFiscalFieldAnswer(expectedKey, t);
   }
 
   if (state === "income_capture") {
@@ -437,7 +489,7 @@ function intakeRedirectForState(state: ConversationState, context: Record<string
     return "Add income using **amount**, **currency**, and **date** (or **per month** for monthly gross). Use the **income form** for a table view.";
   }
   if (state === "events") {
-    return "Next, list any **taxable events** for this year (for example vesting, asset sales, large distributions). Describe one event at a time here in chat.";
+    return "Next we **review taxable events derived from your income** — confirm the table or go back to income to fix sources.";
   }
   if (state === "deductions") {
     return "List **deductions** you want to claim (type, amount, currency, tax period), one at a time, or say you have none.";
@@ -446,7 +498,7 @@ function intakeRedirectForState(state: ConversationState, context: Record<string
     return "Next, we capture **capital gains** (asset type, acquisition and sale dates/values, currencies). Describe one disposition at a time here in chat.";
   }
   if (state === "monthly_calc") {
-    return "We review **monthly tax** totals built from your income timeline. Check that months and amounts look reasonable, or say what to fix.";
+    return "We review **monthly Carnê-Leão** totals built from your income timeline. Confirm the month table or say what to fix.";
   }
   if (state === "report") {
     return "We **finalize your year summary** from what you entered. Answer the assistant when asked if you would like a short recap—your **yes** saves a report draft and shows counts here in chat.";
@@ -545,25 +597,26 @@ async function postToolCallAssistantText(
   taxYear: number,
   context: Record<string, unknown>
 ): Promise<string> {
-  if (prevState === "fiscal_residence" && newState === "income_capture") {
+  if (prevState === "fiscal_residence" && (newState === "income_capture" || newState === "fiscal_residence")) {
     const fr = context.fiscalResidence;
     const parsed =
       fr && typeof fr === "object"
         ? fiscalResidenceSchema.safeParse(fr)
         : ({ success: false } as const);
+    const plan = await loadIntakeModulePlan(userId, taxYear, context);
     if (parsed.success) {
       const profile = deriveFiscalProfile(parsed.data);
       const review = profile.requiresAdditionalReview ? " This case may need expert review." : "";
       const name = parsed.data.fullName?.trim();
       const thanks = name ? `Thanks, **${name}**. ` : "";
-      return (
-        `${thanks}Your fiscal profile for **${taxYear}** is saved as **${profile.profile}**.${review}\n\n` +
-        (await incomeCheckpointMessage(userId, taxYear))
-      );
+      const planNote = describeModulePlanForUser(plan);
+      const tail =
+        context._usFilingPending === true
+          ? usFilingPromptText()
+          : await resolveIntakeRedirect("income_capture", context, userId, taxYear);
+      return `${thanks}Your fiscal profile for **${taxYear}** is saved as **${profile.profile}**.${review}\n\n${planNote}\n\n${tail}`;
     }
-    return (
-      `Your fiscal profile for **${taxYear}** is saved.\n\n` + (await incomeCheckpointMessage(userId, taxYear))
-    );
+    return `Your fiscal profile for **${taxYear}** is saved.\n\n${await resolveIntakeRedirect(newState, context, userId, taxYear)}`;
   }
   if (newState !== prevState) {
     const stepLabel = newState.replace(/_/g, " ");
@@ -615,7 +668,9 @@ async function incomeCheckpointMessage(userId: string, taxYear: number): Promise
     "To edit rows in a **table**, open the **income form** in the app.";
 
   if (rows.length === 0) {
-    return `${cta}\n\n_Income on file: **0** rows._`;
+    return (
+      `**Income screening:** any income from **Brazil**, the **US**, or **other countries** this year? Add each source with amount, currency, and date.\n\n${cta}\n\n_Income on file: **0** rows._`
+    );
   }
 
   const header = `**Income on file (${rows.length})** — confirm this list or say what to change.\n\n`;
@@ -638,7 +693,20 @@ async function resolveIntakeRedirect(
   taxYear: number
 ): Promise<string> {
   if (state === "income_capture") {
-    return incomeCheckpointMessage(userId, taxYear);
+    const plan = await loadIntakeModulePlan(userId, taxYear, context);
+    const gaps = await resolveIncomeGaps(userId, taxYear);
+    const base = await incomeCheckpointMessage(userId, taxYear);
+    const planNote = describeModulePlanForUser(plan);
+    if (gaps.summaryText) {
+      return `${planNote}\n\n${gaps.summaryText}\n\n${base}`;
+    }
+    return `${planNote}\n\n${base}`;
+  }
+  if (state === "events") {
+    return eventsCheckpointMessage(userId, taxYear);
+  }
+  if (state === "monthly_calc") {
+    return formatMonthlyTaxForRecap(userId, taxYear);
   }
   return intakeRedirectForState(state, context);
 }
@@ -657,38 +725,6 @@ function toolNestedOrFlatArgs(
   return undefined;
 }
 
-async function persistIncomeSourceRow(userId: string, taxYear: number, income: IncomeSource): Promise<void> {
-  const fpRow = await prisma.fiscalResidenceProfile.findUnique({
-    where: { userId_taxYear: { userId, taxYear } }
-  });
-  const derived = (fpRow?.derivedProfile ?? "undetermined") as FiscalProfile;
-  const classified = classifyIncome(income, derived);
-  await prisma.incomeSource.create({
-    data: {
-      userId,
-      taxYear,
-      payerName: classified.payerName,
-      originCountry: classified.originCountry,
-      incomeType: classified.incomeType,
-      grossAmount: classified.grossAmount,
-      originalCurrency: classified.originalCurrency,
-      paymentDate: new Date(classified.paymentDate),
-      periodicity: classified.periodicity,
-      taxPaidOriginCountry: classified.taxPaidOriginCountry ?? null,
-      withholdingTax: classified.withholdingTax ?? null,
-      hasProofDocument: classified.hasProofDocument ?? null,
-      destinationAccountHint: classified.destinationAccountHint ?? null,
-      transferredToBrazil: classified.transferredToBrazil ?? null,
-      remainedAbroad: classified.remainedAbroad ?? null,
-      nature: classified.nature,
-      notes: classified.notes ?? null,
-      exchangeRateToBrl: classified.exchangeRateToBrl ?? null,
-      grossAmountBrl: classified.grossAmountBrl ?? null,
-      classification: classified.classification as Prisma.InputJsonValue
-    }
-  });
-}
-
 type ApplyToolCallsResult = { incomeRowsSaved: number };
 
 async function applyToolCalls(
@@ -702,11 +738,6 @@ async function applyToolCalls(
   let state = session.state as ConversationState;
   let requiresReview = false;
   let incomeRowsSaved = 0;
-  const fpRowForCapital = await prisma.fiscalResidenceProfile.findUnique({
-    where: { userId_taxYear: { userId, taxYear } }
-  });
-  const capitalJurisdiction: "BR" | "US" =
-    fpRowForCapital?.derivedProfile === "resident_usa" ? "US" : "BR";
 
   for (const call of toolCalls) {
     if (call.type !== "function") continue;
@@ -725,28 +756,13 @@ async function applyToolCalls(
       // user+year would inherit the old answers and a single new field (e.g. nationality) could
       // satisfy the full schema and skip the whole step incorrectly.
       context = { ...context, ...flat };
-      coerceFiscalBooleansInPlace(context);
-      const parsed = fiscalResidenceSchema.safeParse(context);
+      const merged = prepareFiscalPayloadForValidation(getFiscalResidenceMergedFields(context));
+      const parsed = fiscalResidenceSchema.safeParse(merged);
       if (parsed.success) {
-        const profile = deriveFiscalProfile(parsed.data);
-        await prisma.fiscalResidenceProfile.upsert({
-          where: { userId_taxYear: { userId, taxYear } },
-          create: {
-            userId,
-            taxYear,
-            data: parsed.data as Prisma.InputJsonValue,
-            derivedProfile: profile.profile,
-            requiresAdditionalReview: profile.requiresAdditionalReview
-          },
-          update: {
-            data: parsed.data as Prisma.InputJsonValue,
-            derivedProfile: profile.profile,
-            requiresAdditionalReview: profile.requiresAdditionalReview
-          }
-        });
-        state = "income_capture";
-        context = { incomes: [], fiscalResidence: parsed.data };
-        requiresReview = profile.requiresAdditionalReview;
+        const result = await completeFiscalProfileAndDetermineNext(userId, taxYear, parsed.data, context);
+        state = result.state;
+        context = result.context;
+        requiresReview = result.requiresAdditionalReview;
       }
     }
 
@@ -761,7 +777,7 @@ async function applyToolCalls(
       if (!raw) continue;
       const parsedIncome = incomeSourceSchema.safeParse(raw);
       if (!parsedIncome.success) continue;
-      await persistIncomeSourceRow(userId, taxYear, parsedIncome.data);
+      await createClassifiedIncome(userId, taxYear, parsedIncome.data);
       incomeRowsSaved += 1;
     }
 
@@ -772,30 +788,8 @@ async function applyToolCalls(
       if (!raw) continue;
       const parsedDeduction = deductionSchema.safeParse(raw);
       if (!parsedDeduction.success) continue;
-      const d = parsedDeduction.data;
-      const v = validateDeductionForMvp(d);
-      if (!v.ok) continue;
-      await prisma.deduction.create({
-        data: {
-          userId,
-          taxYear,
-          deductionType: d.deductionType,
-          relatedIncomeId: d.relatedIncomeId ?? null,
-          relatedEventId: d.relatedEventId ?? null,
-          relatedAssetId: d.relatedAssetId ?? null,
-          amount: d.amount,
-          currency: d.currency,
-          exchangeRate: d.exchangeRate ?? null,
-          amountBrl: d.amountBrl ?? null,
-          taxPeriod: d.taxPeriod,
-          applicationScope: d.applicationScope,
-          isRecurring: d.isRecurring ?? null,
-          isEligible: d.isEligible ?? null,
-          requiresProof: d.requiresProof ?? null,
-          proofDocumentUrl: d.proofDocumentUrl ?? null,
-          notes: d.notes ?? null
-        }
-      });
+      const created = await createDeduction(userId, taxYear, parsedDeduction.data);
+      if (!created.ok) continue;
     }
 
     if (name === "submit_capital_gain") {
@@ -805,33 +799,7 @@ async function applyToolCalls(
       if (!raw) continue;
       const parsedCg = capitalGainCalculationSchema.safeParse(raw);
       if (!parsedCg.success) continue;
-      const cg = parsedCg.data;
-      const result = computeCapitalGain(cg, capitalJurisdiction);
-      const dataPack = capitalJurisdiction === "US" ? DATA_PACK_US_2026 : DATA_PACK_BR_2026;
-      await prisma.capitalGainCalculation.create({
-        data: {
-          userId,
-          taxYear,
-          assetType: cg.assetType,
-          assetCountry: cg.assetCountry,
-          acquisitionDate: new Date(cg.acquisitionDate),
-          acquisitionValue: cg.acquisitionValue,
-          acquisitionCurrency: cg.acquisitionCurrency,
-          saleDate: new Date(cg.saleDate),
-          saleValue: cg.saleValue,
-          saleCurrency: cg.saleCurrency,
-          ownershipPercentageSold: cg.ownershipPercentageSold,
-          deductibleExpenses: cg.deductibleExpenses,
-          foreignTaxPaid: cg.foreignTaxPaid ?? null,
-          proportionalCost: null,
-          gainAmount: result.gain,
-          taxEstimate: result.taxEstimate,
-          ruleVersion: buildRuleVersionStamp(dataPack),
-          jurisdiction: capitalJurisdiction,
-          dataPackVersion: dataPack,
-          requiresAdditionalReview: result.requiresAdditionalReview
-        }
-      });
+      await createCapitalGainCalculation(userId, taxYear, parsedCg.data);
     }
 
     if (name === "mark_complex_case") {
@@ -839,8 +807,11 @@ async function applyToolCalls(
     }
 
     if (name === "advance_conversation_state") {
-      const next = normalizeForwardAdvance(state as ConversationState, args.nextState);
-      if (next) state = next;
+      const rawNext = normalizeForwardAdvance(state as ConversationState, args.nextState);
+      if (rawNext) {
+        const plan = await loadIntakeModulePlan(userId, taxYear, context);
+        state = applyProfileAwareAdvance(state as ConversationState, rawNext, plan);
+      }
     }
   }
 
@@ -861,59 +832,57 @@ async function templateFiscalResidence(
   userContent: string
 ): Promise<string> {
   const c = { ...getContext(session) };
-  const lastAsked = (c._lastAskedKey as string | undefined) ?? FISCAL_FIELD_ORDER[0].key;
-  const idx = FISCAL_FIELD_ORDER.findIndex((f) => f.key === lastAsked);
-  const currentField = FISCAL_FIELD_ORDER[Math.max(0, idx)]!;
-  const key = currentField.key;
-  c[key] = coerceValue(key, userContent);
-  const nextIdx = FISCAL_FIELD_ORDER.findIndex((f) => f.key === key) + 1;
+  const mergedBefore = getFiscalResidenceMergedFields(c);
+  const order = getActiveFiscalFieldOrder(mergedBefore);
+  const lastAsked = (c._lastAskedKey as string | undefined) ?? order[0]!.key;
+  const currentField = order.find((f) => f.key === lastAsked) ?? order[0]!;
+  c[currentField.key] = coerceFiscalFieldValue(currentField.key, userContent);
+  coerceFiscalBooleansInPlace(c);
 
-  if (nextIdx < FISCAL_FIELD_ORDER.length) {
-    c._lastAskedKey = FISCAL_FIELD_ORDER[nextIdx]!.key;
+  const merged = getFiscalResidenceMergedFields(c);
+  const nextField = getActiveFiscalFieldOrder(merged).find((f) => !isValidFiscalFieldValue(f.key, merged[f.key]));
+  if (nextField) {
+    c._lastAskedKey = nextField.key;
     await prisma.conversationSession.update({
       where: { id: sessionId },
       data: { contextJson: c as Prisma.InputJsonValue }
     });
-    return FISCAL_FIELD_ORDER[nextIdx]!.prompt;
+    return nextField.prompt;
   }
 
-  const parsed = fiscalResidenceSchema.safeParse(c);
+  const forValidation = prepareFiscalPayloadForValidation(merged);
+  const parsed = fiscalResidenceSchema.safeParse(forValidation);
   if (!parsed.success) {
-    c._lastAskedKey = FISCAL_FIELD_ORDER[0]!.key;
+    c._lastAskedKey = order[0]!.key;
     await prisma.conversationSession.update({
       where: { id: sessionId },
       data: { contextJson: c as Prisma.InputJsonValue }
     });
-    return `I could not validate all fields (${parsed.error.message}). Let's restart: ${FISCAL_FIELD_ORDER[0]!.prompt}`;
+    return `I could not validate all fields (${parsed.error.message}). Let's restart: ${firstFiscalFieldPrompt()}`;
   }
 
-  const profile = deriveFiscalProfile(parsed.data);
-  await prisma.fiscalResidenceProfile.upsert({
-    where: { userId_taxYear: { userId: session.userId, taxYear: session.taxYear } },
-    create: {
-      userId: session.userId,
-      taxYear: session.taxYear,
-      data: parsed.data as Prisma.InputJsonValue,
-      derivedProfile: profile.profile,
-      requiresAdditionalReview: profile.requiresAdditionalReview
-    },
-    update: {
-      data: parsed.data as Prisma.InputJsonValue,
-      derivedProfile: profile.profile,
-      requiresAdditionalReview: profile.requiresAdditionalReview
-    }
-  });
-
+  const result = await completeFiscalProfileAndDetermineNext(session.userId, session.taxYear, parsed.data, c);
+  const plan = await loadIntakeModulePlan(session.userId, session.taxYear, result.context);
   await prisma.conversationSession.update({
     where: { id: sessionId },
     data: {
-      state: "income_capture",
-      requiresAdditionalReview: profile.requiresAdditionalReview,
-      contextJson: { incomes: [], fiscalResidence: parsed.data } as Prisma.InputJsonValue
+      state: result.state,
+      requiresAdditionalReview: result.requiresAdditionalReview,
+      contextJson: result.context as Prisma.InputJsonValue
     }
   });
 
-  return `Thanks, I saved your fiscal profile as **${profile.profile}**. ${profile.requiresAdditionalReview ? "This case may need expert review. " : ""}Next, describe your income sources in chat, one at a time.`;
+  const profile = deriveFiscalProfile(parsed.data);
+  let tail = "";
+  if (result.state === "fiscal_residence" && result.context._usFilingPending === true) {
+    tail = usFilingPromptText();
+  } else {
+    tail = await resolveIntakeRedirect("income_capture", result.context, session.userId, session.taxYear);
+  }
+  return (
+    `Thanks, I saved your fiscal profile as **${profile.profile}**. ${profile.requiresAdditionalReview ? "This case may need expert review. " : ""}` +
+    `${describeModulePlanForUser(plan)}\n\n${tail}`
+  );
 }
 
 function describeFiscalProfileForRecap(raw: string): string {
@@ -1031,18 +1000,27 @@ async function formatIntakeRecapForChat(userId: string, taxYear: number, reportI
       "\n_No annual tax estimate rows are on file for this year yet (the engine may not have produced a snapshot)._\n";
   }
 
+  const monthlyBlock = await formatMonthlySummaryBlockForRecap(userId, taxYear);
+  const capitalBlock = await formatCapitalGainsBlockForRecap(userId, taxYear);
+  const checklist = await formatMissingDataChecklist(userId, taxYear);
+  const actions = nextActionsBlock();
+
   return (
     `**Yes — a report was generated.** A **TaxReport** database record was created for **${taxYear}** (title: **${reportTitle}**). It stores the JSON bundle the product uses for review (incomes, taxable events, deductions, monthly snapshots, capital-gain inputs, and **per-jurisdiction annual estimates** with gross, taxable base, and tax lines—not only net due).${stamp}\n\n` +
     `**Profile (modeled):** ${profileLine}\n\n` +
     `**What is in that report**\n` +
     `- Income lines: **${ic}**\n` +
-    `- Taxable events: **${ec}**\n` +
+    `- Taxable events (derived): **${ec}**\n` +
     `- Deductions: **${dc}**\n` +
     `- Capital gain calculations: **${cg}**\n` +
     `- Monthly tax snapshots on file: **${mc}**\n` +
     incomeBlock +
+    monthlyBlock +
+    capitalBlock +
     annualEstimatesBlock +
+    checklist +
     `All of the above is **orientation only**—not a filing position.${reviewNote}\n\n` +
+    actions +
     `If anything is wrong, reply with the payer, date, or amount to correct.`
   );
 }
@@ -1086,6 +1064,74 @@ export async function handleUserMessage(sessionId: string, userContent: string):
     return { assistantText, sessionState: finalSession.state as ConversationState };
   }
 
+  if ((session.state as ConversationState) === "fiscal_residence" && isTriagePending(ctx)) {
+    const goal = parseIntakeGoal(userContent);
+    if (goal) {
+      const newCtx = { ...ctx, intakeGoal: goal, _triagePending: false };
+      await prisma.conversationSession.update({
+        where: { id: sessionId },
+        data: { contextJson: newCtx as Prisma.InputJsonValue }
+      });
+      if (isFiscalProfileConfirmPending(newCtx)) {
+        const row = await prisma.fiscalResidenceProfile.findUnique({
+          where: { userId_taxYear: { userId: session.userId, taxYear: session.taxYear } }
+        });
+        const parsed =
+          row?.data && typeof row.data === "object"
+            ? fiscalResidenceSchema.safeParse(row.data)
+            : ({ success: false } as const);
+        if (parsed.success) {
+          assistantText =
+            `Recorded focus: **${goal.replace(/_/g, " ")}**.\n\n` +
+            buildAssistantMessageForExistingFiscalProfile({
+              taxYear: session.taxYear,
+              data: parsed.data,
+              derivedProfile: row!.derivedProfile,
+              requiresAdditionalReview: row!.requiresAdditionalReview
+            });
+        } else {
+          assistantText = `Recorded focus: **${goal.replace(/_/g, " ")}**.\n\n${firstFiscalFieldPrompt()}`;
+        }
+      } else {
+        assistantText = `Recorded focus: **${goal.replace(/_/g, " ")}**.\n\n${firstFiscalFieldPrompt()}`;
+      }
+      await prisma.conversationMessage.create({
+        data: { sessionId, role: "assistant", content: assistantText }
+      });
+      const finalSession = await prisma.conversationSession.findUniqueOrThrow({ where: { id: sessionId } });
+      return { assistantText, sessionState: finalSession.state as ConversationState };
+    }
+  }
+
+  if (
+    (session.state as ConversationState) === "fiscal_residence" &&
+    !isTriagePending(ctx) &&
+    !isFiscalProfileConfirmPending(ctx)
+  ) {
+    const plan = await loadIntakeModulePlan(session.userId, session.taxYear, ctx);
+    if (isUsFilingPending(ctx, plan)) {
+      const usInputs = parseUsFilingInputs(userContent);
+      if (usInputs) {
+        const newCtx = { ...ctx, usFilingInputs: usInputs, _usFilingPending: false };
+        await prisma.conversationSession.update({
+          where: { id: sessionId },
+          data: {
+            state: "income_capture",
+            contextJson: newCtx as Prisma.InputJsonValue
+          }
+        });
+        assistantText =
+          `Saved US filing status: **${usInputs.filingStatus.replace(/_/g, " ")}**.\n\n` +
+          (await resolveIntakeRedirect("income_capture", newCtx, session.userId, session.taxYear));
+        await prisma.conversationMessage.create({
+          data: { sessionId, role: "assistant", content: assistantText }
+        });
+        const finalSession = await prisma.conversationSession.findUniqueOrThrow({ where: { id: sessionId } });
+        return { assistantText, sessionState: finalSession.state as ConversationState };
+      }
+    }
+  }
+
   if (
     (session.state as ConversationState) === "fiscal_residence" &&
     isFiscalProfileConfirmPending(ctx)
@@ -1101,7 +1147,7 @@ export async function handleUserMessage(sessionId: string, userContent: string):
         where: { id: sessionId },
         data: { contextJson: stripFiscalProfileConfirmFlag(ctx) as Prisma.InputJsonValue }
       });
-      assistantText = `We couldn't load a saved fiscal profile for **${session.taxYear}** anymore. Let's start fresh.\n\n${FISCAL_FIELD_ORDER[0]!.prompt}`;
+      assistantText = `We couldn't load a saved fiscal profile for **${session.taxYear}** anymore. Let's start fresh.\n\n${firstFiscalFieldPrompt()}`;
     } else if (use && !replace) {
       const parsed = fiscalResidenceSchema.safeParse(row.data);
       if (!parsed.success) {
@@ -1109,25 +1155,28 @@ export async function handleUserMessage(sessionId: string, userContent: string):
           where: { id: sessionId },
           data: { contextJson: stripFiscalProfileConfirmFlag(ctx) as Prisma.InputJsonValue }
         });
-        assistantText = `The saved profile could not be read anymore. Let's re-enter your details.\n\n${FISCAL_FIELD_ORDER[0]!.prompt}`;
+        assistantText = `The saved profile could not be read anymore. Let's re-enter your details.\n\n${firstFiscalFieldPrompt()}`;
       } else {
-        const profile = deriveFiscalProfile(parsed.data);
+        const result = await completeFiscalProfileAndDetermineNext(
+          session.userId,
+          session.taxYear,
+          parsed.data,
+          { ...ctx, intakeGoal: ctx.intakeGoal }
+        );
         await prisma.conversationSession.update({
           where: { id: sessionId },
           data: {
-            state: "income_capture",
-            requiresAdditionalReview: profile.requiresAdditionalReview,
-            contextJson: { incomes: [], fiscalResidence: parsed.data } as Prisma.InputJsonValue
+            state: result.state,
+            requiresAdditionalReview: result.requiresAdditionalReview,
+            contextJson: result.context as Prisma.InputJsonValue
           }
         });
         assistantText = await postToolCallAssistantText(
           session.userId,
           "fiscal_residence",
-          "income_capture",
+          result.state,
           session.taxYear,
-          {
-            fiscalResidence: parsed.data
-          }
+          result.context
         );
       }
     } else if (replace && !use) {
@@ -1136,7 +1185,7 @@ export async function handleUserMessage(sessionId: string, userContent: string):
         data: { contextJson: stripFiscalProfileConfirmFlag(ctx) as Prisma.InputJsonValue }
       });
       assistantText =
-        `Understood — we will re-enter your fiscal profile from scratch.\n\n${FISCAL_FIELD_ORDER[0]!.prompt}`;
+        `Understood — we will re-enter your fiscal profile from scratch.\n\n${firstFiscalFieldPrompt()}`;
     } else {
       assistantText = `Please reply **yes** to keep the saved profile and continue, or **no** to replace it and start over.`;
     }
@@ -1169,12 +1218,21 @@ export async function handleUserMessage(sessionId: string, userContent: string):
   }
 
   if ((session.state as ConversationState) === "income_capture" && isIncomeCaptureDoneIntent(userContent)) {
+    const gaps = await resolveIncomeGaps(session.userId, session.taxYear);
+    if (gaps.hasBlockingGaps) {
+      assistantText = `${gaps.summaryText}\n\n${await incomeCheckpointMessage(session.userId, session.taxYear)}`;
+      await prisma.conversationMessage.create({
+        data: { sessionId, role: "assistant", content: assistantText }
+      });
+      const finalSession = await prisma.conversationSession.findUniqueOrThrow({ where: { id: sessionId } });
+      return { assistantText, sessionState: finalSession.state as ConversationState };
+    }
     await prisma.conversationSession.update({
       where: { id: sessionId },
       data: { state: "events" }
     });
     assistantText =
-      "Got it — we will move on from income.\n\n" + intakeRedirectForState("events", ctx);
+      "Got it — we will move on from income.\n\n" + (await eventsCheckpointMessage(session.userId, session.taxYear));
     await prisma.conversationMessage.create({
       data: { sessionId, role: "assistant", content: assistantText }
     });
@@ -1182,26 +1240,38 @@ export async function handleUserMessage(sessionId: string, userContent: string):
     return { assistantText, sessionState: finalSession.state as ConversationState };
   }
 
-  if ((session.state as ConversationState) === "events") {
-    const priorAssistant = lastAssistantContent(messages);
-    const askedNoneConfirm = lastAssistantAskedEventNoneConfirmation(priorAssistant);
-    const skipEvents = isEventsSkipIntent(userContent);
-    const affirmNoEvents = isShortAffirmativeAdvance(userContent) && askedNoneConfirm;
-    if (skipEvents || affirmNoEvents) {
-      await prisma.conversationSession.update({
-        where: { id: sessionId },
-        data: { state: "deductions" }
-      });
-      const lead = skipEvents
-        ? "Understood — **no taxable events** for this step."
-        : "Thanks — recorded as **no taxable events**.";
-      assistantText = `${lead}\n\n` + intakeRedirectForState("deductions", ctx);
-      await prisma.conversationMessage.create({
-        data: { sessionId, role: "assistant", content: assistantText }
-      });
-      const finalSession = await prisma.conversationSession.findUniqueOrThrow({ where: { id: sessionId } });
-      return { assistantText, sessionState: finalSession.state as ConversationState };
-    }
+  if ((session.state as ConversationState) === "events" && isEventsConfirmIntent(userContent)) {
+    const plan = await loadIntakeModulePlan(session.userId, session.taxYear, ctx);
+    const next = nextStateAfterEvents(plan);
+    await prisma.conversationSession.update({
+      where: { id: sessionId },
+      data: { state: next }
+    });
+    const skipCgNote =
+      next === "deductions" ? " Capital gains are skipped for your intake focus.\n\n" : "";
+    assistantText =
+      `Thanks — **derived taxable events** confirmed.${skipCgNote}` + intakeRedirectForState(next, ctx);
+    await prisma.conversationMessage.create({
+      data: { sessionId, role: "assistant", content: assistantText }
+    });
+    const finalSession = await prisma.conversationSession.findUniqueOrThrow({ where: { id: sessionId } });
+    return { assistantText, sessionState: finalSession.state as ConversationState };
+  }
+
+  if ((session.state as ConversationState) === "capital_gain" && isCapitalGainSkipIntent(userContent)) {
+    const plan = await loadIntakeModulePlan(session.userId, session.taxYear, ctx);
+    const next = nextStateAfterCapitalGain(plan);
+    await prisma.conversationSession.update({
+      where: { id: sessionId },
+      data: { state: next }
+    });
+    assistantText =
+      `Noted — **no capital gains** this year.\n\n` + intakeRedirectForState("deductions", ctx);
+    await prisma.conversationMessage.create({
+      data: { sessionId, role: "assistant", content: assistantText }
+    });
+    const finalSession = await prisma.conversationSession.findUniqueOrThrow({ where: { id: sessionId } });
+    return { assistantText, sessionState: finalSession.state as ConversationState };
   }
 
   if ((session.state as ConversationState) === "deductions") {
@@ -1210,20 +1280,60 @@ export async function handleUserMessage(sessionId: string, userContent: string):
     const skipDeductions = isDeductionsSkipIntent(userContent);
     const affirmProceed = isShortAffirmativeAdvance(userContent) && askedProceed;
     if (skipDeductions || affirmProceed) {
+      const plan = await loadIntakeModulePlan(session.userId, session.taxYear, ctx);
+      const next = nextStateAfterDeductions(plan);
       await prisma.conversationSession.update({
         where: { id: sessionId },
-        data: { state: "capital_gain" }
+        data: { state: next }
       });
       const lead = skipDeductions
         ? "Noted — we will treat **deductions** as none for this pass."
         : "Great — moving on.";
-      assistantText = `${lead}\n\n` + intakeRedirectForState("capital_gain", ctx);
+      const tail =
+        next === "report"
+          ? intakeRedirectForState("report", ctx)
+          : await formatMonthlyTaxForRecap(session.userId, session.taxYear);
+      assistantText = `${lead}\n\n${tail}`;
       await prisma.conversationMessage.create({
         data: { sessionId, role: "assistant", content: assistantText }
       });
       const finalSession = await prisma.conversationSession.findUniqueOrThrow({ where: { id: sessionId } });
       return { assistantText, sessionState: finalSession.state as ConversationState };
     }
+  }
+
+  if ((session.state as ConversationState) === "monthly_calc" && isMonthlyCalcConfirmIntent(userContent)) {
+    await prisma.conversationSession.update({
+      where: { id: sessionId },
+      data: { state: "report" }
+    });
+    assistantText =
+      "Thanks — **monthly totals** confirmed.\n\n" + intakeRedirectForState("report", ctx);
+    await prisma.conversationMessage.create({
+      data: { sessionId, role: "assistant", content: assistantText }
+    });
+    const finalSession = await prisma.conversationSession.findUniqueOrThrow({ where: { id: sessionId } });
+    return { assistantText, sessionState: finalSession.state as ConversationState };
+  }
+
+  if (
+    isProceedAnywayIntent(userContent) &&
+    ["events", "deductions", "capital_gain", "monthly_calc", "report"].includes(
+      session.state as ConversationState
+    )
+  ) {
+    const reportId = await buildAndSaveReport(session.userId, session.taxYear);
+    const recap = await formatIntakeRecapForChat(session.userId, session.taxYear, reportId);
+    await prisma.conversationSession.update({
+      where: { id: sessionId },
+      data: { state: "complete" }
+    });
+    assistantText = recap + "\n\n" + intakeRedirectForState("complete", ctx);
+    await prisma.conversationMessage.create({
+      data: { sessionId, role: "assistant", content: assistantText }
+    });
+    const finalSession = await prisma.conversationSession.findUniqueOrThrow({ where: { id: sessionId } });
+    return { assistantText, sessionState: finalSession.state as ConversationState };
   }
 
   const summaryYesStates: ConversationState[] = [
@@ -1247,6 +1357,26 @@ export async function handleUserMessage(sessionId: string, userContent: string):
       (stForSummary !== "events" || assistantAcknowledgesNoTaxableEvents(priorForSummary));
 
     if (explicitReportCmd || summaryConversationYes) {
+      const gaps = await resolveIncomeGaps(session.userId, session.taxYear);
+      const fpRow = await prisma.fiscalResidenceProfile.findUnique({
+        where: { userId_taxYear: { userId: session.userId, taxYear: session.taxYear } }
+      });
+      const needsHandoff =
+        session.requiresAdditionalReview ||
+        (fpRow?.requiresAdditionalReview ?? false) ||
+        gaps.gaps.length > 0;
+      if (needsHandoff && !isProceedAnywayIntent(userContent) && !explicitReportCmd) {
+        assistantText =
+          specialistHandoffBlock(
+            session.requiresAdditionalReview || (fpRow?.requiresAdditionalReview ?? false),
+            gaps.summaryText
+          ) + intakeRedirectForState(stForSummary, ctx);
+        await prisma.conversationMessage.create({
+          data: { sessionId, role: "assistant", content: assistantText }
+        });
+        const finalSession = await prisma.conversationSession.findUniqueOrThrow({ where: { id: sessionId } });
+        return { assistantText, sessionState: finalSession.state as ConversationState };
+      }
       const reportId = await buildAndSaveReport(session.userId, session.taxYear);
       const recap = await formatIntakeRecapForChat(session.userId, session.taxYear, reportId);
       await prisma.conversationSession.update({
@@ -1331,7 +1461,7 @@ export async function handleUserMessage(sessionId: string, userContent: string):
         notes: notesSuffix
       });
       if (!draft.success) return;
-      await persistIncomeSourceRow(session.userId, session.taxYear, draft.data);
+      await createClassifiedIncome(session.userId, session.taxYear, draft.data);
       const periodNote = periodicity === "monthly" ? " (monthly gross)" : "";
       savedSummaries.push(
         `${draft.data.grossAmount} ${draft.data.originalCurrency} on ${draft.data.paymentDate}${periodNote}`
@@ -1378,10 +1508,13 @@ export async function handleUserMessage(sessionId: string, userContent: string):
 
   if (config.llmEnabled) {
     const prevState = session.state as ConversationState;
+    const llmCtx = getContext(session);
+    const modulePlan = await loadIntakeModulePlan(session.userId, session.taxYear, llmCtx);
     const systemPrompt = buildSystemPrompt(
       session.state as ConversationState,
       session.taxYear,
-      getContext(session)
+      llmCtx,
+      modulePlan
     );
     const { content, toolCalls } = await runAssistantWithTools({
       systemPrompt,
@@ -1394,14 +1527,49 @@ export async function handleUserMessage(sessionId: string, userContent: string):
     const hadIncomeTool = toolCalls.some(
       (c) => c.type === "function" && c.function.name === "submit_income_source"
     );
-    const refreshed = await prisma.conversationSession.findUniqueOrThrow({ where: { id: sessionId } });
-    const newState = refreshed.state as ConversationState;
-    const newCtx = getContext(refreshed);
+    let refreshed = await prisma.conversationSession.findUniqueOrThrow({ where: { id: sessionId } });
+    let newState = refreshed.state as ConversationState;
+    let newCtx = getContext(refreshed);
+
+    if (prevState === "fiscal_residence" && newState === "fiscal_residence") {
+      const fused = fuseUserMessageIntoFiscalContext(newCtx, userContent);
+      if (fused) {
+        newCtx = fused;
+        const finalized = await tryCompleteFiscalResidenceFromContext(
+          session.userId,
+          session.taxYear,
+          newCtx
+        );
+        if (finalized) {
+          newCtx = finalized.context;
+          newState = finalized.state;
+          await prisma.conversationSession.update({
+            where: { id: sessionId },
+            data: {
+              contextJson: newCtx as Prisma.InputJsonValue,
+              state: newState,
+              requiresAdditionalReview:
+                finalized.requiresAdditionalReview || refreshed.requiresAdditionalReview
+            }
+          });
+        } else {
+          await prisma.conversationSession.update({
+            where: { id: sessionId },
+            data: { contextJson: newCtx as Prisma.InputJsonValue }
+          });
+        }
+        refreshed = await prisma.conversationSession.findUniqueOrThrow({ where: { id: sessionId } });
+      }
+    }
     const trimmed = content?.trim() ?? "";
     if (trimmed) {
       assistantText = trimmed;
       if (newState === "income_capture") {
-        assistantText += `\n\n${await incomeCheckpointMessage(session.userId, session.taxYear)}`;
+        assistantText += `\n\n${await resolveIntakeRedirect("income_capture", newCtx, session.userId, session.taxYear)}`;
+      } else if (newState === "fiscal_residence") {
+        assistantText += `\n\n${await resolveIntakeRedirect("fiscal_residence", newCtx, session.userId, session.taxYear)}`;
+      } else if (newState === "events" || newState === "monthly_calc") {
+        assistantText += `\n\n${await resolveIntakeRedirect(newState, newCtx, session.userId, session.taxYear)}`;
       }
     } else if (toolCalls.length) {
       if (
@@ -1450,390 +1618,4 @@ export async function handleUserMessage(sessionId: string, userContent: string):
 
   const finalSession = await prisma.conversationSession.findUniqueOrThrow({ where: { id: sessionId } });
   return { assistantText, sessionState: finalSession.state as ConversationState };
-}
-
-/** RF-003 sync: rebuild TaxableEvent rows from incomes. */
-export async function syncTaxableEvents(userId: string, taxYear: number): Promise<number> {
-  const incomes = await prisma.incomeSource.findMany({ where: { userId, taxYear } });
-  const parsed = incomes.map((row) =>
-    incomeSourceSchema.parse({
-      payerName: row.payerName,
-      originCountry: row.originCountry,
-      incomeType: row.incomeType,
-      grossAmount: row.grossAmount.toNumber(),
-      originalCurrency: row.originalCurrency,
-      paymentDate: row.paymentDate.toISOString().slice(0, 10),
-      periodicity: row.periodicity,
-      taxPaidOriginCountry: row.taxPaidOriginCountry?.toNumber(),
-      withholdingTax: row.withholdingTax?.toNumber(),
-      hasProofDocument: row.hasProofDocument ?? undefined,
-      destinationAccountHint: row.destinationAccountHint ?? undefined,
-      transferredToBrazil: row.transferredToBrazil ?? undefined,
-      remainedAbroad: row.remainedAbroad ?? undefined,
-      nature: row.nature,
-      notes: row.notes ?? undefined,
-      exchangeRateToBrl: row.exchangeRateToBrl?.toNumber(),
-      grossAmountBrl: row.grossAmountBrl?.toNumber(),
-      classification: row.classification as Record<string, unknown> | undefined
-    })
-  );
-  const detected = detectTaxableEventsFromIncomes(parsed);
-  await prisma.taxableEvent.deleteMany({ where: { userId, taxYear } });
-  for (let i = 0; i < detected.length; i++) {
-    const e = detected[i]!;
-    await prisma.taxableEvent.create({
-      data: {
-        userId,
-        taxYear,
-        eventType: e.eventType,
-        description: e.description,
-        occurredOn: new Date(parsed[i]!.paymentDate),
-        isTaxable: e.isTaxable,
-        requiresReview: e.requiresReview,
-        incomeSourceId: incomes[i]?.id,
-        amountBrl: parsed[i]!.grossAmountBrl ?? undefined,
-        currency: parsed[i]!.originalCurrency,
-        amountOriginal: parsed[i]!.grossAmount
-      }
-    });
-  }
-  return detected.length;
-}
-
-async function loadRulePatches(jurisdiction: "BR" | "US", taxYear: number): Promise<{ key: string; value: unknown }[]> {
-  const rows = await prisma.ruleOverride.findMany({
-    where: { jurisdiction, taxYear }
-  });
-  return rows.map((r) => ({ key: r.key, value: r.valueJson as unknown }));
-}
-
-export async function recomputeMonthlyTax(userId: string, taxYear: number): Promise<void> {
-  const fp = await prisma.fiscalResidenceProfile.findUnique({
-    where: { userId_taxYear: { userId, taxYear } }
-  });
-  const profile = fp?.derivedProfile ?? "undetermined";
-  if (profile === "resident_usa") {
-    return;
-  }
-
-  const brPack = getBrRulePack(await loadRulePatches("BR", taxYear));
-  const ruleStamp = buildRuleVersionStamp(brPack.dataPackId);
-
-  const incomes = await prisma.incomeSource.findMany({ where: { userId, taxYear } });
-  const items = [];
-  for (const row of incomes) {
-    const cls = row.classification as { calculationModule?: string } | null;
-    if (cls?.calculationModule !== "carnet_leao") continue;
-    const fx = resolveBrlFromIncome({
-      grossAmount: row.grossAmount.toNumber(),
-      originalCurrency: row.originalCurrency,
-      grossAmountBrl: row.grossAmountBrl?.toNumber(),
-      exchangeRateToBrl: row.exchangeRateToBrl?.toNumber()
-    });
-    const requiresReview = (fp?.requiresAdditionalReview ?? false) || fx.requiresAdditionalReview;
-    items.push({
-      incomeSourceId: row.id,
-      taxEventId: undefined,
-      incomeType: row.incomeType,
-      originCountry: row.originCountry,
-      paymentDate: row.paymentDate.toISOString().slice(0, 10),
-      originalAmount: row.grossAmount.toNumber(),
-      originalCurrency: row.originalCurrency,
-      exchangeRate: fx.exchangeRate,
-      amountBrl: fx.amountBrl,
-      foreignTaxPaid: row.taxPaidOriginCountry?.toNumber(),
-      deductionAmount: 0,
-      exemptionAmount: 0,
-      taxableAmount: fx.amountBrl,
-      calculatedTax: 0,
-      requiresReview,
-      notes: fx.notes
-    });
-  }
-  const taxedItems = applyCarneLeaoTaxToItems(items, brPack);
-  const aggregates = aggregateMonthlyCarnetLeao(taxedItems, { ruleVersion: ruleStamp });
-  for (const agg of aggregates) {
-    const parent = await prisma.monthlyTaxCalculation.upsert({
-      where: {
-        userId_taxYear_taxMonth: { userId, taxYear, taxMonth: agg.month }
-      },
-      create: {
-        userId,
-        taxYear,
-        taxMonth: agg.month,
-        fiscalResidenceStatus: fp?.derivedProfile ?? null,
-        totalForeignIncomeBrl: agg.taxableBaseBrl,
-        taxableBase: agg.taxableBaseBrl,
-        appliedTaxRate: agg.rate,
-        grossTax: agg.grossTax,
-        netTaxDue: agg.grossTax,
-        calculationStatus: agg.requiresAdditionalReview ? "preliminary" : "complete",
-        requiresAdditionalReview: agg.requiresAdditionalReview,
-        ruleVersion: agg.ruleVersion,
-        jurisdiction: "BR",
-        dataPackVersion: brPack.dataPackId
-      },
-      update: {
-        totalForeignIncomeBrl: agg.taxableBaseBrl,
-        taxableBase: agg.taxableBaseBrl,
-        appliedTaxRate: agg.rate,
-        grossTax: agg.grossTax,
-        netTaxDue: agg.grossTax,
-        calculationStatus: agg.requiresAdditionalReview ? "preliminary" : "complete",
-        requiresAdditionalReview: agg.requiresAdditionalReview,
-        ruleVersion: agg.ruleVersion,
-        jurisdiction: "BR",
-        dataPackVersion: brPack.dataPackId
-      }
-    });
-    await prisma.monthlyTaxCalculationItem.deleteMany({
-      where: { monthlyTaxCalculationId: parent.id }
-    });
-    for (const it of agg.items) {
-      await prisma.monthlyTaxCalculationItem.create({
-        data: {
-          monthlyTaxCalculationId: parent.id,
-          incomeSourceId: it.incomeSourceId ?? null,
-          incomeType: it.incomeType,
-          originCountry: it.originCountry,
-          paymentDate: new Date(it.paymentDate),
-          originalAmount: it.originalAmount,
-          originalCurrency: it.originalCurrency,
-          exchangeRate: it.exchangeRate,
-          amountBrl: it.amountBrl,
-          foreignTaxPaid: it.foreignTaxPaid ?? null,
-          deductionAmount: it.deductionAmount ?? null,
-          exemptionAmount: it.exemptionAmount ?? null,
-          taxableAmount: it.taxableAmount,
-          calculatedTax: it.calculatedTax,
-          requiresReview: it.requiresReview ?? false,
-          notes: it.notes ?? null
-        }
-      });
-    }
-  }
-}
-
-function serializeTaxCalculationRow(r: TaxCalculation): Record<string, unknown> {
-  return {
-    id: r.id,
-    jurisdiction: r.jurisdiction,
-    calculationType: r.calculationType,
-    currency: r.currency,
-    grossIncome: r.grossIncome.toNumber(),
-    deductionsTotal: r.deductionsTotal.toNumber(),
-    exemptionsTotal: r.exemptionsTotal.toNumber(),
-    taxableBase: r.taxableBase.toNumber(),
-    appliedRate: r.appliedRate.toNumber(),
-    grossTax: r.grossTax.toNumber(),
-    foreignTaxPaid: r.foreignTaxPaid?.toNumber() ?? null,
-    taxCreditApplied: r.taxCreditApplied?.toNumber() ?? null,
-    netTaxDue: r.netTaxDue.toNumber(),
-    calculationStatus: r.calculationStatus,
-    requiresAdditionalReview: r.requiresAdditionalReview,
-    ruleVersion: r.ruleVersion,
-    dataPackVersion: r.dataPackVersion ?? null,
-    feieApplied: r.feieApplied?.toNumber() ?? null,
-    ftcApplied: r.ftcApplied?.toNumber() ?? null,
-    niit: r.niit?.toNumber() ?? null,
-    createdAt: r.createdAt.toISOString(),
-    updatedAt: r.updatedAt.toISOString()
-  };
-}
-
-/** One row per jurisdiction: the newest TaxCalculation for that user/year/jurisdiction. */
-async function getLatestTaxCalculationSnapshot(
-  userId: string,
-  taxYear: number
-): Promise<Record<string, unknown>[]> {
-  const rows = await prisma.taxCalculation.findMany({
-    where: { userId, taxYear },
-    orderBy: { createdAt: "desc" }
-  });
-  const byJurisdiction = new Map<string, TaxCalculation>();
-  for (const row of rows) {
-    if (!byJurisdiction.has(row.jurisdiction)) byJurisdiction.set(row.jurisdiction, row);
-  }
-  return [...byJurisdiction.values()].map(serializeTaxCalculationRow);
-}
-
-export async function buildAndSaveReport(userId: string, taxYear: number): Promise<string> {
-  await recomputeMonthlyTax(userId, taxYear);
-  await estimateAnnualTax(userId, taxYear);
-
-  const fp = await prisma.fiscalResidenceProfile.findUnique({
-    where: { userId_taxYear: { userId, taxYear } }
-  });
-  const incomes = await prisma.incomeSource.findMany({ where: { userId, taxYear } });
-  const events = await prisma.taxableEvent.findMany({ where: { userId, taxYear } });
-  const deductions = await prisma.deduction.findMany({ where: { userId, taxYear } });
-  const monthly = await prisma.monthlyTaxCalculation.findMany({ where: { userId, taxYear } });
-  const capitalGains = await prisma.capitalGainCalculation.findMany({ where: { userId, taxYear } });
-  const requiresAdditionalReview =
-    (fp?.requiresAdditionalReview ?? false) ||
-    events.some((e) => e.requiresReview) ||
-    monthly.some((m) => m.requiresAdditionalReview);
-
-  const prof = (fp?.derivedProfile ?? "undetermined") as FiscalProfile;
-  const jurs = jurisdictionsForProfile(prof);
-  const reportRuleVersion =
-    jurs.includes("BR") && jurs.includes("US")
-      ? `${buildRuleVersionStamp(DATA_PACK_BR_2026)}+${buildRuleVersionStamp(DATA_PACK_US_2026)}`
-      : jurs.includes("US")
-        ? buildRuleVersionStamp(DATA_PACK_US_2026)
-        : buildRuleVersionStamp(DATA_PACK_BR_2026);
-  const reportJurisdiction = jurs.includes("BR") && jurs.includes("US") ? "BR+US" : jurs.includes("US") ? "US" : "BR";
-
-  const annualTaxEstimates = await getLatestTaxCalculationSnapshot(userId, taxYear);
-
-  const summary = buildTaxReportSummary({
-    taxYear,
-    fiscalProfile: fp?.derivedProfile ?? "unknown",
-    incomes,
-    events,
-    deductions,
-    monthly,
-    capitalGains,
-    annualTaxEstimates,
-    requiresAdditionalReview,
-    ruleVersion: reportRuleVersion
-  });
-
-  const report = await prisma.taxReport.create({
-    data: {
-      userId,
-      taxYear,
-      title: summary.title,
-      summaryJson: summary.summaryJson as Prisma.InputJsonValue,
-      requiresAdditionalReview: summary.requiresAdditionalReview,
-      ruleVersion: summary.ruleVersion,
-      jurisdiction: reportJurisdiction,
-      dataPackVersion: reportRuleVersion
-    }
-  });
-  return report.id;
-}
-
-export async function estimateAnnualTax(userId: string, taxYear: number): Promise<void> {
-  const incomes = await prisma.incomeSource.findMany({ where: { userId, taxYear } });
-  const deductions = await prisma.deduction.findMany({ where: { userId, taxYear } });
-  const fp = await prisma.fiscalResidenceProfile.findUnique({
-    where: { userId_taxYear: { userId, taxYear } }
-  });
-  const profile = (fp?.derivedProfile ?? "undetermined") as FiscalProfile;
-  const jurs = jurisdictionsForProfile(profile);
-  const brPack = getBrRulePack(await loadRulePatches("BR", taxYear));
-  const usPack = getUsRulePack(await loadRulePatches("US", taxYear));
-
-  for (const jurisdiction of jurs) {
-    if (jurisdiction === "BR") {
-      let grossBrl = 0;
-      let review = fp?.requiresAdditionalReview ?? false;
-      for (const row of incomes) {
-        const fx = resolveBrlFromIncome({
-          grossAmount: row.grossAmount.toNumber(),
-          originalCurrency: row.originalCurrency,
-          grossAmountBrl: row.grossAmountBrl?.toNumber(),
-          exchangeRateToBrl: row.exchangeRateToBrl?.toNumber()
-        });
-        grossBrl += fx.amountBrl;
-        review ||= fx.requiresAdditionalReview;
-      }
-      const dedBrl = deductions.reduce((s, d) => s + (d.amountBrl?.toNumber() ?? d.amount.toNumber()), 0);
-      const foreignBrl = incomes.reduce((s, i) => s + (i.taxPaidOriginCountry?.toNumber() ?? 0), 0);
-      const est = buildBrAnnualEstimate({
-        taxYear,
-        grossIncomeBrl: grossBrl,
-        deductionsTotalBrl: dedBrl,
-        exemptionsTotalBrl: 0,
-        foreignTaxPaidBrl: foreignBrl,
-        requiresAdditionalReview: review,
-        pack: brPack
-      });
-      await prisma.taxCalculation.create({
-        data: {
-          userId,
-          taxYear: est.taxYear,
-          calculationType: est.calculationType,
-          grossIncome: est.grossIncome,
-          deductionsTotal: est.deductionsTotal,
-          exemptionsTotal: est.exemptionsTotal,
-          taxableBase: est.taxableBase,
-          appliedRate: est.appliedRate,
-          grossTax: est.grossTax,
-          foreignTaxPaid: est.foreignTaxPaid ?? null,
-          taxCreditApplied: est.taxCreditApplied ?? null,
-          netTaxDue: est.netTaxDue,
-          currency: est.currency,
-          calculationStatus: est.calculationStatus,
-          requiresAdditionalReview: est.requiresAdditionalReview,
-          ruleVersion: est.ruleVersion,
-          jurisdiction: "BR",
-          dataPackVersion: est.dataPackVersion ?? brPack.dataPackId,
-          feieApplied: null,
-          ftcApplied: null,
-          niit: null
-        }
-      });
-    } else {
-      let grossUsd = 0;
-      let review = fp?.requiresAdditionalReview ?? false;
-      for (const row of incomes) {
-        const fx = resolveUsdFromIncome({
-          grossAmount: row.grossAmount.toNumber(),
-          originalCurrency: row.originalCurrency
-        });
-        grossUsd += fx.amountUsd;
-        review ||= fx.requiresAdditionalReview;
-      }
-      let dedUsd = 0;
-      for (const d of deductions) {
-        if (d.currency === "USD") {
-          dedUsd += d.amount.toNumber();
-        } else if (d.currency === "BRL" && d.amountBrl) {
-          review = true;
-        } else {
-          review = true;
-        }
-      }
-      const foreignUsd = incomes.reduce((s, i) => s + (i.taxPaidOriginCountry?.toNumber() ?? 0), 0);
-      const est = buildUsAnnualEstimate({
-        taxYear,
-        grossIncomeUsd: grossUsd,
-        deductionsUsd: dedUsd,
-        exemptionsUsd: 0,
-        foreignTaxPaidUsd: foreignUsd,
-        foreignEarnedIncomeUsd: 0,
-        netInvestmentIncomeUsd: 0,
-        filingStatus: "single",
-        requiresAdditionalReview: review,
-        pack: usPack
-      });
-      await prisma.taxCalculation.create({
-        data: {
-          userId,
-          taxYear: est.taxYear,
-          calculationType: est.calculationType,
-          grossIncome: est.grossIncome,
-          deductionsTotal: est.deductionsTotal,
-          exemptionsTotal: est.exemptionsTotal,
-          taxableBase: est.taxableBase,
-          appliedRate: est.appliedRate,
-          grossTax: est.grossTax,
-          foreignTaxPaid: est.foreignTaxPaid ?? null,
-          taxCreditApplied: est.taxCreditApplied ?? null,
-          netTaxDue: est.netTaxDue,
-          currency: est.currency,
-          calculationStatus: est.calculationStatus,
-          requiresAdditionalReview: est.requiresAdditionalReview,
-          ruleVersion: est.ruleVersion,
-          jurisdiction: "US",
-          dataPackVersion: est.dataPackVersion ?? usPack.dataPackId,
-          feieApplied: est.feieApplied ?? null,
-          ftcApplied: est.ftcApplied ?? null,
-          niit: est.niit ?? null
-        }
-      });
-    }
-  }
 }

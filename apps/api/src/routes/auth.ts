@@ -3,32 +3,45 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { signToken } from "../middleware/auth.js";
+import { config } from "../config.js";
+import { createUser, userCredentialsSchema } from "../services/create-user.js";
 
-const registerSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8)
-});
-
-const loginSchema = registerSchema;
+const loginSchema = userCredentialsSchema;
 
 export const authRouter = Router();
 
+authRouter.get("/config", (_req, res) => {
+  res.json({ registrationEnabled: config.registrationEnabled });
+});
+
 authRouter.post("/register", async (req, res) => {
-  const parsed = registerSchema.safeParse(req.body);
+  if (!config.registrationEnabled) {
+    res.status(403).json({ error: "Registration is not open" });
+    return;
+  }
+
+  const parsed = userCredentialsSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.flatten() });
     return;
   }
+
   const { email, password } = parsed.data;
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
-    res.status(409).json({ error: "Email already registered" });
-    return;
+  try {
+    const user = await createUser(email, password);
+    const token = signToken({ sub: user.id, email: user.email });
+    res.status(201).json({ token, user: { id: user.id, email: user.email } });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: err.flatten() });
+      return;
+    }
+    if (err instanceof Error && err.name === "UserAlreadyExistsError") {
+      res.status(409).json({ error: err.message });
+      return;
+    }
+    throw err;
   }
-  const passwordHash = await bcrypt.hash(password, 10);
-  const user = await prisma.user.create({ data: { email, passwordHash } });
-  const token = signToken({ sub: user.id, email: user.email });
-  res.status(201).json({ token, user: { id: user.id, email: user.email } });
 });
 
 authRouter.post("/login", async (req, res) => {

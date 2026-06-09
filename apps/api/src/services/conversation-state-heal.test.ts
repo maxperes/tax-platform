@@ -5,10 +5,9 @@ import {
 } from "./conversation-state-heal.js";
 
 describe("healStateIfAssistantAnnouncedLaterStep", () => {
-  it("returns deductions when prose moves from events to deductions", () => {
-    const text =
-      "Great! Let's move on to deductions. Please provide the first type of deduction you would like to claim.";
-    expect(healStateIfAssistantAnnouncedLaterStep(text, "events")).toBe("deductions");
+  it("returns capital_gain when prose moves from events to capital gains", () => {
+    const text = "Great! Let's move on to capital gains. Describe one asset sale at a time.";
+    expect(healStateIfAssistantAnnouncedLaterStep(text, "events")).toBe("capital_gain");
   });
 
   it("does not change fiscal_residence", () => {
@@ -30,8 +29,8 @@ describe("normalizeForwardAdvance", () => {
   it("rejects backwards from deductions to events", () => {
     expect(normalizeForwardAdvance("deductions", "events")).toBeNull();
   });
-  it("accepts deductions to capital_gain", () => {
-    expect(normalizeForwardAdvance("deductions", "capital_gain")).toBe("capital_gain");
+  it("accepts capital_gain to deductions", () => {
+    expect(normalizeForwardAdvance("capital_gain", "deductions")).toBe("deductions");
   });
   it("rejects same state", () => {
     expect(normalizeForwardAdvance("events", "events")).toBeNull();

@@ -3,8 +3,8 @@
   "private": true,
   "scripts": {
     "build": "pnpm --filter @tax-platform/shared build && pnpm --filter @tax-platform/rules build && pnpm --filter @tax-platform/api build && pnpm --filter @tax-platform/web build",
-    "dev": "pnpm --parallel --filter @tax-platform/api --filter @tax-platform/web run dev",
-    "dev:api": "pnpm --filter @tax-platform/api dev",
+    "dev": "pnpm --filter @tax-platform/shared --filter @tax-platform/rules build && pnpm --parallel --filter @tax-platform/api --filter @tax-platform/web run dev",
+    "dev:api": "pnpm --filter @tax-platform/shared --filter @tax-platform/rules build && pnpm --filter @tax-platform/api dev",
     "dev:web": "pnpm --filter @tax-platform/web dev",
     "lint": "pnpm -r run lint",
     "test": "pnpm -r run test",

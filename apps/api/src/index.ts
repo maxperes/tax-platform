@@ -2,6 +2,7 @@ import "./types/express.js";
 import fs from "node:fs";
 import path from "node:path";
 import express from "express";
+import { ZodError } from "zod";
 import cors from "cors";
 import helmet from "helmet";
 import { config } from "./config.js";
@@ -50,6 +51,10 @@ if (webDist && fs.existsSync(webDist)) {
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   void _next;
+  if (err instanceof ZodError) {
+    res.status(400).json({ error: "Validation failed", details: err.flatten() });
+    return;
+  }
   console.error(err);
   res.status(500).json({ error: "Internal server error" });
 });

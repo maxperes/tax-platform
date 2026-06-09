@@ -6,6 +6,8 @@ node_modules
 !.env.example
 dist
 **/dist
+# Copied from the host, these make `tsc --build` / composite think outputs exist while `dist/` is excluded above → empty emit in Docker.
+**/*.tsbuildinfo
 coverage
 *.md
 .DS_Store

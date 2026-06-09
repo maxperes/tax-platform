@@ -26,12 +26,58 @@ type IncomeRow = {
   nature: "work" | "investment" | "retirement" | "asset" | "corporate" | "trust" | "other";
 };
 
+type DeductionRow = {
+  id: string;
+  taxYear: number;
+  deductionType: string;
+  amount: string;
+  currency: string;
+  taxPeriod: string;
+  applicationScope: "monthly" | "annual" | "transaction";
+};
+
+type AnnualEstimateRow = {
+  jurisdiction?: string;
+  currency?: string;
+  grossIncome?: number;
+  taxableBase?: number;
+  grossTax?: number;
+  taxCreditApplied?: number | null;
+  netTaxDue?: number;
+  calculationStatus?: string;
+};
+
+type MonthlyCarnetRow = {
+  taxMonth?: string;
+  taxableBase?: number | string;
+  netTaxDue?: number | string;
+  calculationStatus?: string;
+  requiresAdditionalReview?: boolean;
+};
+
+type ReportSummaryJson = {
+  fiscalProfile?: string;
+  annualTaxEstimates?: AnnualEstimateRow[];
+  monthlyCarnetLeao?: MonthlyCarnetRow[];
+  capitalGains?: Array<{ assetType?: string; gainAmount?: number | string; taxEstimate?: number | string }>;
+  estimatesDisclaimer?: string;
+};
+
+type FullTaxReport = {
+  id: string;
+  taxYear: number;
+  title: string;
+  createdAt: string;
+  requiresAdditionalReview: boolean;
+  summaryJson: ReportSummaryJson;
+};
+
 const STEP_ORDER = [
   { id: "fiscal_residence", label: "Fiscal profile" },
   { id: "income_capture", label: "Income" },
-  { id: "events", label: "Taxable events" },
-  { id: "deductions", label: "Deductions" },
+  { id: "events", label: "Derived events" },
   { id: "capital_gain", label: "Capital gains" },
+  { id: "deductions", label: "Deductions" },
   { id: "monthly_calc", label: "Monthly tax" },
   { id: "report", label: "Report" },
   { id: "complete", label: "Done" }
@@ -40,10 +86,10 @@ const STEP_ORDER = [
 const WHY_HINT_BY_STATE: Record<string, string> = {
   fiscal_residence: "Why this matters: this determines your residency tax rules and filing scope.",
   income_capture: "Why this matters: income details drive taxable events and monthly tax estimates.",
-  events: "Why this matters: event classification determines what is taxable and what needs review.",
+  events: "Why this matters: we confirm how your income rows classify as taxable events before continuing.",
   deductions: "Why this matters: eligible deductions can reduce your final taxable base.",
   capital_gain: "Why this matters: sale/acquisition details determine capital gain tax treatment.",
-  monthly_calc: "Why this matters: monthly aggregation estimates Carnet-Leao obligations.",
+  monthly_calc: "Why this matters: month-by-month Carnê-Leão estimates for foreign income (when applicable).",
   report: "Why this matters: we assemble a complete summary for review and export.",
   complete: "Your intake is complete. You can now review or export your summary."
 };
@@ -66,6 +112,13 @@ const INCOME_QUICK_ADDS = [
 function stepProgress(state: string): { index: number; total: number } {
   const idx = STEP_ORDER.findIndex((s) => s.id === state);
   return { index: Math.max(0, idx) + 1, total: STEP_ORDER.length };
+}
+
+function formatMoney(n: unknown, currency = ""): string {
+  const num = typeof n === "number" ? n : Number(n);
+  if (!Number.isFinite(num)) return "—";
+  const s = Math.abs(num).toLocaleString("en-US", { maximumFractionDigits: 2 });
+  return currency ? `${s} ${currency}` : s;
 }
 
 const welcomeBannerStorageKey = (id: string) => `tax-platform-chat-dismiss-welcome-${id}`;
@@ -168,6 +221,10 @@ export function ChatPage() {
   const [incomeDraftRows, setIncomeDraftRows] = useState<IncomeRow[]>([]);
   const [savingIncomeId, setSavingIncomeId] = useState<string>("");
   const [incomeError, setIncomeError] = useState<string>("");
+  const [showDeductionEditor, setShowDeductionEditor] = useState(false);
+  const [deductionDraftRows, setDeductionDraftRows] = useState<DeductionRow[]>([]);
+  const [savingDeductionId, setSavingDeductionId] = useState<string>("");
+  const [deductionError, setDeductionError] = useState<string>("");
   const [navigatingStep, setNavigatingStep] = useState(false);
   const [hideWelcomeBanner, setHideWelcomeBanner] = useState(false);
   const [hideReviewBanner, setHideReviewBanner] = useState(false);
@@ -207,6 +264,28 @@ export function ChatPage() {
     enabled: Boolean(sessionId && session?.state === "income_capture")
   });
 
+  const { data: deductionRows = [], isFetching: loadingDeductions } = useQuery({
+    queryKey: ["deductions", sessionId, session?.taxYear],
+    queryFn: async (): Promise<DeductionRow[]> => {
+      const rows = await api<
+        Array<{
+          id: string;
+          taxYear: number;
+          deductionType: string;
+          amount: string | number;
+          currency: string;
+          taxPeriod: string;
+          applicationScope: DeductionRow["applicationScope"];
+        }>
+      >(`/api/deductions?taxYear=${session!.taxYear}`);
+      return rows.map((r) => ({
+        ...r,
+        amount: String(r.amount)
+      }));
+    },
+    enabled: Boolean(sessionId && session?.state === "deductions")
+  });
+
   type LatestReportMeta = { id: string; taxYear: number; title: string; createdAt: string };
   const { data: latestReportMeta } = useQuery({
     queryKey: ["taxReportLatest", sessionId, session?.taxYear],
@@ -220,7 +299,24 @@ export function ChatPage() {
       if (!res.ok) throw new Error(res.statusText);
       return (await res.json()) as LatestReportMeta;
     },
-    enabled: Boolean(sessionId && session && session.state === "complete"),
+    enabled: Boolean(
+      sessionId && session && (session.state === "complete" || session.state === "report")
+    ),
+    staleTime: 15_000
+  });
+
+  const { data: fullReport } = useQuery({
+    queryKey: ["taxReportFull", latestReportMeta?.id],
+    queryFn: async (): Promise<FullTaxReport | null> => {
+      if (!latestReportMeta?.id) return null;
+      const token = getToken();
+      const res = await fetch(`/api/report/${latestReportMeta.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (!res.ok) throw new Error(res.statusText);
+      return (await res.json()) as FullTaxReport;
+    },
+    enabled: Boolean(latestReportMeta?.id),
     staleTime: 15_000
   });
 
@@ -263,6 +359,10 @@ export function ChatPage() {
   useEffect(() => {
     setIncomeDraftRows(incomeRows);
   }, [incomeRows]);
+
+  useEffect(() => {
+    setDeductionDraftRows(deductionRows);
+  }, [deductionRows]);
 
   useEffect(() => {
     if (!sessionId || !session) return;
@@ -472,6 +572,55 @@ export function ChatPage() {
     }
   }
 
+  function updateDeductionDraft(id: string, key: keyof DeductionRow, value: string) {
+    setDeductionDraftRows((prev) => prev.map((r) => (r.id === id ? { ...r, [key]: value } : r)));
+  }
+
+  function addDeductionDraftRow() {
+    if (!session) return;
+    const id = `new-${Date.now()}`;
+    setShowDeductionEditor(true);
+    setDeductionDraftRows((prev) => [
+      {
+        id,
+        taxYear: session.taxYear,
+        deductionType: "health",
+        amount: "",
+        currency: "BRL",
+        taxPeriod: String(session.taxYear),
+        applicationScope: "annual"
+      },
+      ...prev
+    ]);
+  }
+
+  async function saveDeductionRow(row: DeductionRow) {
+    if (!session) return;
+    setSavingDeductionId(row.id);
+    setDeductionError("");
+    try {
+      const payload = {
+        deductionType: row.deductionType.trim(),
+        amount: Number(row.amount),
+        currency: row.currency.trim().toUpperCase(),
+        taxPeriod: row.taxPeriod.trim(),
+        applicationScope: row.applicationScope
+      };
+      if (row.id.startsWith("new-")) {
+        await api("/api/deductions", {
+          method: "POST",
+          body: JSON.stringify({ taxYear: session.taxYear, deduction: payload })
+        });
+      }
+      await qc.invalidateQueries({ queryKey: ["deductions", sessionId, session.taxYear] });
+      await qc.invalidateQueries({ queryKey: ["session", sessionId] });
+    } catch (err) {
+      setDeductionError(err instanceof Error ? err.message : "Could not save deduction row");
+    } finally {
+      setSavingDeductionId("");
+    }
+  }
+
   async function deleteIncomeRow(row: IncomeRow) {
     if (!session) return;
     setIncomeError("");
@@ -669,6 +818,78 @@ export function ChatPage() {
             </button>
           </div>
         )}
+        {(session.state === "complete" || session.state === "report") && fullReport && (
+          <div className="mt-3 rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-3 text-xs text-slate-200 space-y-3">
+            <p className="text-sm font-medium text-emerald-200">Results summary</p>
+            {fullReport.requiresAdditionalReview && (
+              <p className="text-amber-200">
+                Flagged for additional review — figures are preliminary orientation only.
+              </p>
+            )}
+            {fullReport.summaryJson.annualTaxEstimates &&
+              fullReport.summaryJson.annualTaxEstimates.length > 0 && (
+                <div>
+                  <p className="text-slate-400 mb-1">Annual estimates (per jurisdiction)</p>
+                  <ul className="space-y-1">
+                    {fullReport.summaryJson.annualTaxEstimates.map((est, i) => (
+                      <li key={i}>
+                        <strong>{est.jurisdiction}</strong> ({est.currency}): gross{" "}
+                        {formatMoney(est.grossIncome, est.currency)} → net due{" "}
+                        <strong>{formatMoney(est.netTaxDue, est.currency)}</strong> ({est.calculationStatus})
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            {fullReport.summaryJson.monthlyCarnetLeao &&
+              fullReport.summaryJson.monthlyCarnetLeao.length > 0 && (
+                <div>
+                  <p className="text-slate-400 mb-1">Monthly Carnê-Leão</p>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-[420px] w-full text-[11px]">
+                      <thead className="text-slate-500">
+                        <tr>
+                          <th className="text-left pr-2">Month</th>
+                          <th className="text-left pr-2">Base (BRL)</th>
+                          <th className="text-left pr-2">Net due</th>
+                          <th className="text-left">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {fullReport.summaryJson.monthlyCarnetLeao.map((m, i) => (
+                          <tr key={i} className="border-t border-slate-800">
+                            <td className="pr-2 py-0.5">{m.taxMonth}</td>
+                            <td className="pr-2 py-0.5">{formatMoney(m.taxableBase, "BRL")}</td>
+                            <td className="pr-2 py-0.5">{formatMoney(m.netTaxDue, "BRL")}</td>
+                            <td className="py-0.5">
+                              {m.calculationStatus}
+                              {m.requiresAdditionalReview ? " ⚠" : ""}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            {fullReport.summaryJson.capitalGains && fullReport.summaryJson.capitalGains.length > 0 && (
+              <div>
+                <p className="text-slate-400 mb-1">Capital gains</p>
+                <ul className="space-y-1">
+                  {fullReport.summaryJson.capitalGains.map((cg, i) => (
+                    <li key={i}>
+                      {cg.assetType}: gain {formatMoney(cg.gainAmount)} · est. tax{" "}
+                      {formatMoney(cg.taxEstimate)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {fullReport.summaryJson.estimatesDisclaimer && (
+              <p className="text-slate-500 italic">{fullReport.summaryJson.estimatesDisclaimer}</p>
+            )}
+          </div>
+        )}
         {session.state === "complete" && (
           <div className="mt-3 rounded-lg border border-emerald-800/50 bg-emerald-950/25 px-3 py-2 text-xs text-emerald-100 space-y-2">
             <p>
@@ -719,6 +940,101 @@ export function ChatPage() {
         <div id="chat-end" />
       </main>
       <footer className="border-t border-slate-800 px-4 py-4">
+        {session.state === "deductions" && (
+          <div className="mb-3 space-y-2">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDeductionEditor((v) => !v)}
+                className="rounded-full border border-sky-700 bg-sky-950 px-3 py-1 text-xs text-sky-200 hover:border-sky-500"
+              >
+                {showDeductionEditor ? "Hide deductions table" : "Open deductions table"}
+              </button>
+              <button
+                type="button"
+                onClick={addDeductionDraftRow}
+                className="rounded-full border border-emerald-700 bg-emerald-950 px-3 py-1 text-xs text-emerald-200 hover:border-emerald-500"
+              >
+                Add deduction
+              </button>
+            </div>
+            {showDeductionEditor && (
+              <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-2 overflow-x-auto">
+                <table className="min-w-[720px] w-full text-xs">
+                  <thead className="text-slate-400">
+                    <tr>
+                      <th className="px-2 py-1 text-left">Type</th>
+                      <th className="px-2 py-1 text-left">Amount</th>
+                      <th className="px-2 py-1 text-left">Currency</th>
+                      <th className="px-2 py-1 text-left">Tax period</th>
+                      <th className="px-2 py-1 text-left">Scope</th>
+                      <th className="px-2 py-1 text-left">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deductionDraftRows.map((r) => (
+                      <tr key={r.id} className="border-t border-slate-800">
+                        <td className="px-2 py-1">
+                          <input
+                            value={r.deductionType}
+                            onChange={(e) => updateDeductionDraft(r.id, "deductionType", e.target.value)}
+                            className="w-28 rounded border border-slate-700 bg-slate-900 px-2 py-1"
+                          />
+                        </td>
+                        <td className="px-2 py-1">
+                          <input
+                            value={r.amount}
+                            onChange={(e) => updateDeductionDraft(r.id, "amount", e.target.value)}
+                            className="w-24 rounded border border-slate-700 bg-slate-900 px-2 py-1"
+                          />
+                        </td>
+                        <td className="px-2 py-1">
+                          <input
+                            value={r.currency}
+                            onChange={(e) => updateDeductionDraft(r.id, "currency", e.target.value)}
+                            className="w-16 rounded border border-slate-700 bg-slate-900 px-2 py-1 uppercase"
+                          />
+                        </td>
+                        <td className="px-2 py-1">
+                          <input
+                            value={r.taxPeriod}
+                            onChange={(e) => updateDeductionDraft(r.id, "taxPeriod", e.target.value)}
+                            className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1"
+                          />
+                        </td>
+                        <td className="px-2 py-1">
+                          <select
+                            value={r.applicationScope}
+                            onChange={(e) => updateDeductionDraft(r.id, "applicationScope", e.target.value)}
+                            className="rounded border border-slate-700 bg-slate-900 px-2 py-1"
+                          >
+                            <option value="annual">annual</option>
+                            <option value="monthly">monthly</option>
+                            <option value="transaction">transaction</option>
+                          </select>
+                        </td>
+                        <td className="px-2 py-1 whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => void saveDeductionRow(r)}
+                            disabled={savingDeductionId === r.id || !r.id.startsWith("new-")}
+                            className="rounded border border-emerald-700 bg-emerald-950 px-2 py-1 text-emerald-200 disabled:opacity-50"
+                          >
+                            {savingDeductionId === r.id ? "Saving..." : r.id.startsWith("new-") ? "Save" : "Saved"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="mt-2 text-[11px] text-slate-400">
+                  {loadingDeductions ? "Loading rows..." : `${deductionDraftRows.length} deduction(s). Say **no deductions** in chat to skip.`}
+                </div>
+                {deductionError && <div className="mt-1 text-[11px] text-rose-300">{deductionError}</div>}
+              </div>
+            )}
+          </div>
+        )}
         {session.state === "income_capture" && (
           <div className="mb-3 space-y-2">
             <div className="flex flex-wrap gap-2">

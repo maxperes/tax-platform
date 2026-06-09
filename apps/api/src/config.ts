@@ -25,11 +25,41 @@ const openaiModel =
   process.env.OPENAI_MODEL?.trim() ||
   (openaiBaseUrl ? "llama3.2" : "gpt-4o-mini");
 
+const iamAuthRaw = process.env.DATABASE_IAM_AUTH?.trim().toLowerCase();
+const databaseIamAuth = iamAuthRaw === "true" || iamAuthRaw === "1" || iamAuthRaw === "yes";
+
+function parseBoolEnv(value: string | undefined, defaultValue: boolean): boolean {
+  if (value === undefined) return defaultValue;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true" || normalized === "1" || normalized === "yes") return true;
+  if (normalized === "false" || normalized === "0" || normalized === "no") return false;
+  return defaultValue;
+}
+
+const DEV_JWT_SECRET = "dev-insecure-change-me";
+const jwtSecret = process.env.JWT_SECRET || DEV_JWT_SECRET;
+
+if (process.env.NODE_ENV === "production") {
+  if (!process.env.JWT_SECRET || jwtSecret === DEV_JWT_SECRET) {
+    throw new Error("JWT_SECRET must be set to a strong value in production");
+  }
+}
+
 export const config = {
   port: Number(process.env.PORT) || 4000,
-  jwtSecret: process.env.JWT_SECRET || "dev-insecure-change-me",
+  jwtSecret,
   corsOrigin: process.env.CORS_ORIGIN || "http://localhost:5173",
   databaseUrl: process.env.DATABASE_URL || "",
+  /** When true, the DB password in DATABASE_URL is replaced with an RDS IAM auth token (rotated periodically). */
+  databaseIamAuth,
+  /** Region passed to the RDS signer (defaults to DATABASE_IAM_REGION, then AWS_REGION). */
+  databaseIamRegion:
+    process.env.DATABASE_IAM_REGION?.trim() || process.env.AWS_REGION?.trim() || "",
+  /** How often to rotate the IAM token and recreate PrismaClient (default 10 minutes; tokens last ~15 minutes). */
+  databaseIamTokenRefreshMs: Math.max(
+    60_000,
+    Number(process.env.DATABASE_IAM_TOKEN_REFRESH_MS) || 10 * 60 * 1000
+  ),
   /**
    * Absolute path to the Vite `dist` folder (e.g. `/app/apps/web/dist`).
    * When set, the API also serves the SPA so one origin can host UI + `/api` (e.g. AWS App Runner).
@@ -47,5 +77,12 @@ export const config = {
     return Boolean(config.openaiApiKey || config.openaiBaseUrl);
   },
   /** If set, `GET /api/admin/rule-overrides` requires header `x-admin-token` with this value. */
-  adminToken: process.env.ADMIN_TOKEN?.trim() || ""
+  adminToken: process.env.ADMIN_TOKEN?.trim() || "",
+  /**
+   * When false, `POST /api/auth/register` is rejected. Defaults to open in non-production, closed in production.
+   */
+  registrationEnabled: parseBoolEnv(
+    process.env.REGISTRATION_ENABLED,
+    process.env.NODE_ENV !== "production"
+  )
 };

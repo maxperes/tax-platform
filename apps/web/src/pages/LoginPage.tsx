@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useAuthConfig } from "../auth-config";
 import { api, setToken } from "../api";
 
 export function LoginPage() {
   const nav = useNavigate();
+  const { registrationEnabled } = useAuthConfig();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -66,12 +68,19 @@ export function LoginPage() {
             {loading ? "Signing in…" : "Sign in"}
           </button>
         </form>
-        <p className="text-center text-sm text-slate-500 mt-4">
-          No account?{" "}
-          <Link className="text-emerald-400 hover:underline" to="/signup">
-            Create one
-          </Link>
-        </p>
+        {!registrationEnabled && (
+          <p className="text-center text-sm text-slate-500 mt-4">
+            Access is by invitation. Contact us if you need an account.
+          </p>
+        )}
+        {registrationEnabled && (
+          <p className="text-center text-sm text-slate-500 mt-4">
+            No account?{" "}
+            <Link className="text-emerald-400 hover:underline" to="/signup">
+              Create one
+            </Link>
+          </p>
+        )}
       </div>
     </div>
   );
