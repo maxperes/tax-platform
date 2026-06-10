@@ -25,6 +25,7 @@ import {
 import { WHY_HINT_BY_STATE, formatCalcStatus, stepLabelForState, stepProgress } from "../lib/chat-constants";
 import { formatMoney, renderChatEmphasis } from "../lib/chat-utils";
 import { api, downloadAuthenticated, getToken, signOut, streamSessionMessage } from "../api";
+import { fetchTaxReport, taxReportQueryKey } from "./ReportPage";
 
 type Message = { id: string; role: string; content: string; createdAt: string };
 
@@ -34,32 +35,6 @@ type Session = {
   state: string;
   requiresAdditionalReview: boolean;
   messages: Message[];
-};
-
-type FullTaxReport = {
-  id: string;
-  taxYear: number;
-  title: string;
-  createdAt: string;
-  requiresAdditionalReview: boolean;
-  summaryJson: {
-    annualTaxEstimates?: Array<{
-      jurisdiction?: string;
-      currency?: string;
-      grossIncome?: number;
-      netTaxDue?: number;
-      calculationStatus?: string;
-    }>;
-    monthlyCarnetLeao?: Array<{
-      taxMonth?: string;
-      taxableBase?: number | string;
-      netTaxDue?: number | string;
-      calculationStatus?: string;
-      requiresAdditionalReview?: boolean;
-    }>;
-    capitalGains?: Array<{ assetType?: string; gainAmount?: number | string; taxEstimate?: number | string }>;
-    estimatesDisclaimer?: string;
-  };
 };
 
 export function ChatPage() {
@@ -184,16 +159,8 @@ export function ChatPage() {
   });
 
   const { data: fullReport } = useQuery({
-    queryKey: ["taxReportFull", latestReportMeta?.id],
-    queryFn: async (): Promise<FullTaxReport | null> => {
-      if (!latestReportMeta?.id) return null;
-      const token = getToken();
-      const res = await fetch(`/api/report/${latestReportMeta.id}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
-      });
-      if (!res.ok) throw new Error(res.statusText);
-      return (await res.json()) as FullTaxReport;
-    },
+    queryKey: taxReportQueryKey(latestReportMeta!.id),
+    queryFn: () => fetchTaxReport(latestReportMeta!.id),
     enabled: Boolean(latestReportMeta?.id),
     staleTime: 15_000
   });
@@ -381,6 +348,14 @@ export function ChatPage() {
     } finally {
       setResetting(false);
     }
+  }
+
+  async function openReport(reportId: string) {
+    await qc.prefetchQuery({
+      queryKey: taxReportQueryKey(reportId),
+      queryFn: () => fetchTaxReport(reportId)
+    });
+    nav(`/report/${reportId}`);
   }
 
   async function jumpToStep(state: string) {
@@ -751,9 +726,13 @@ export function ChatPage() {
               ))}
               {latestReportMeta && (
                 <div className="flex flex-wrap gap-2">
-                  <Link to={`/report/${latestReportMeta.id}`} className="rounded-lg border border-emerald-600/60 bg-emerald-900/40 px-3 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-900/70">
+                  <button
+                    type="button"
+                    onClick={() => void openReport(latestReportMeta.id)}
+                    className="rounded-lg border border-emerald-600/60 bg-emerald-900/40 px-3 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-900/70"
+                  >
                     View report
-                  </Link>
+                  </button>
                   <button type="button" onClick={() => void downloadLatestReportJson()} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs hover:border-emerald-600">
                     Download JSON
                   </button>
@@ -772,9 +751,13 @@ export function ChatPage() {
             <div className="mt-3 rounded-lg border border-emerald-800/50 bg-emerald-950/25 px-3 py-2 text-xs text-emerald-100 space-y-2">
               {latestReportMeta ? (
                 <div className="flex flex-wrap gap-2">
-                  <Link to={`/report/${latestReportMeta.id}`} className="rounded-lg border border-emerald-600/60 bg-emerald-900/40 px-3 py-1.5 text-xs font-medium text-emerald-100">
+                  <button
+                    type="button"
+                    onClick={() => void openReport(latestReportMeta.id)}
+                    className="rounded-lg border border-emerald-600/60 bg-emerald-900/40 px-3 py-1.5 text-xs font-medium text-emerald-100"
+                  >
                     View report
-                  </Link>
+                  </button>
                   <button type="button" onClick={() => void downloadLatestReportJson()} className="rounded-lg border border-emerald-600/60 px-3 py-1.5 text-xs">
                     Download JSON
                   </button>

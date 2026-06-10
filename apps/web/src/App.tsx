@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { AuthConfigProvider, useAuthConfig } from "./auth-config";
 import { LoginPage } from "./pages/LoginPage";
 import { SignupPage } from "./pages/SignupPage";
@@ -19,6 +19,12 @@ function SignupRoute() {
     return <Navigate to="/login" replace />;
   }
   return <SignupPage />;
+}
+
+function ReportRoute() {
+  const { reportId } = useParams<{ reportId: string }>();
+  if (!reportId) return <Navigate to="/sessions" replace />;
+  return <ReportPage key={reportId} reportId={reportId} />;
 }
 
 function AppRoutes() {
@@ -46,7 +52,7 @@ function AppRoutes() {
         path="/report/:reportId"
         element={
           <PrivateRoute>
-            <ReportPage />
+            <ReportRoute />
           </PrivateRoute>
         }
       />

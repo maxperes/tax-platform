@@ -5,7 +5,7 @@ import { LoadingShell } from "../components/LoadingShell";
 import { formatCalcStatus } from "../lib/chat-constants";
 import { formatMoney } from "../lib/chat-utils";
 
-type FullTaxReport = {
+export type FullTaxReport = {
   id: string;
   taxYear: number;
   title: string;
@@ -35,20 +35,29 @@ type FullTaxReport = {
   };
 };
 
-export function ReportPage() {
-  const { reportId } = useParams<{ reportId: string }>();
+export function taxReportQueryKey(reportId: string) {
+  return ["taxReportFull", reportId] as const;
+}
 
-  const { data: report, isLoading, isError } = useQuery({
-    queryKey: ["taxReportFull", reportId],
-    queryFn: async (): Promise<FullTaxReport> => {
-      const token = getToken();
-      const res = await fetch(`/api/report/${reportId}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
-      });
-      if (!res.ok) throw new Error("Report not found");
-      return (await res.json()) as FullTaxReport;
-    },
-    enabled: Boolean(reportId)
+export async function fetchTaxReport(reportId: string): Promise<FullTaxReport> {
+  const token = getToken();
+  const res = await fetch(`/api/report/${reportId}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  });
+  if (!res.ok) throw new Error("Report not found");
+  return (await res.json()) as FullTaxReport;
+}
+
+export function ReportPage({ reportId: reportIdProp }: { reportId?: string }) {
+  const { reportId: reportIdParam } = useParams<{ reportId: string }>();
+  const reportId = reportIdProp ?? reportIdParam;
+
+  const { data: report, isPending, isError, isFetching } = useQuery({
+    queryKey: taxReportQueryKey(reportId!),
+    queryFn: () => fetchTaxReport(reportId!),
+    enabled: Boolean(reportId),
+    refetchOnMount: "always",
+    retry: 1
   });
 
   const { data: rulesFreshness } = useQuery({
@@ -60,7 +69,7 @@ export function ReportPage() {
     enabled: Boolean(report?.taxYear)
   });
 
-  if (isLoading) return <LoadingShell message="Loading report…" />;
+  if (isPending || (isFetching && !report)) return <LoadingShell message="Loading report…" />;
 
   if (isError || !report) {
     return (
