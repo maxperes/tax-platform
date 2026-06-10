@@ -1,6 +1,6 @@
 import { classifyIncome } from "@tax-platform/rules";
 import type { FiscalProfile, IncomeSource } from "@tax-platform/shared";
-import type { IncomeSource as IncomeSourceRow, Prisma } from "@prisma/client";
+import type { IncomeSource as IncomeSourceRow, Prisma } from "../../prisma-client.js";
 
 type ClassifiedIncome = IncomeSource & { classification: NonNullable<IncomeSource["classification"]> };
 import { prisma } from "../../db.js";

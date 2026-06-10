@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "../prisma-client.js";
 import { prisma } from "../db.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/async-handler.js";

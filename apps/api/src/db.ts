@@ -1,11 +1,9 @@
-import { PrismaClient } from "@prisma/client";
+import { createPrismaClient, PrismaClient } from "./prisma-client.js";
 import { config } from "./config.js";
 import { buildPrismaDatabaseUrl } from "./rds-iam-database-url.js";
 
 async function createClient(url: string): Promise<PrismaClient> {
-  return new PrismaClient({
-    datasources: { db: { url } }
-  });
+  return createPrismaClient(url);
 }
 
 async function resolveUrl(): Promise<string> {

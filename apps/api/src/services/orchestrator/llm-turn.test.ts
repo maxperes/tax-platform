@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "../../prisma-client.js";
 
 type SessionRow = {
   id: string;
@@ -57,7 +57,7 @@ function seedSession(contextJson: Record<string, unknown>) {
     userId: "user-1",
     taxYear: 2026,
     state: "fiscal_residence",
-    contextJson,
+    contextJson: contextJson as Prisma.JsonValue,
     requiresAdditionalReview: false
   };
   store.messages = [

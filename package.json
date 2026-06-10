@@ -2,19 +2,19 @@
   "name": "tax-platform",
   "private": true,
   "scripts": {
-    "build": "pnpm --filter @tax-platform/shared build && pnpm --filter @tax-platform/rules build && pnpm --filter @tax-platform/api build && pnpm --filter @tax-platform/web build",
+    "build": "pnpm --filter @tax-platform/shared build && pnpm --filter @tax-platform/rules build && pnpm --filter @tax-platform/api exec prisma generate && pnpm --filter @tax-platform/api build && pnpm --filter @tax-platform/web build",
     "dev": "pnpm --filter @tax-platform/shared --filter @tax-platform/rules build && pnpm --parallel --filter @tax-platform/api --filter @tax-platform/web run dev",
     "dev:api": "pnpm --filter @tax-platform/shared --filter @tax-platform/rules build && pnpm --filter @tax-platform/api dev",
     "dev:web": "pnpm --filter @tax-platform/web dev",
     "lint": "pnpm -r run lint",
     "test": "pnpm -r run test",
     "db:generate": "dotenv -e .env -- pnpm --filter @tax-platform/api exec prisma generate",
-    "db:migrate": "dotenv -e .env -- pnpm --filter @tax-platform/api exec prisma migrate dev",
+    "db:migrate": "dotenv -e .env -- sh -c 'pnpm --filter @tax-platform/api exec prisma migrate dev && pnpm --filter @tax-platform/api exec prisma generate'",
     "db:migrate:deploy": "dotenv -e .env -- pnpm --filter @tax-platform/api exec prisma migrate deploy",
-    "db:push": "dotenv -e .env -- pnpm --filter @tax-platform/api exec prisma db push"
+    "db:push": "dotenv -e .env -- sh -c 'pnpm --filter @tax-platform/api exec prisma db push && pnpm --filter @tax-platform/api exec prisma generate'"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19.0"
   },
   "packageManager": "pnpm@9.15.0",
   "devDependencies": {

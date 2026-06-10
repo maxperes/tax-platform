@@ -32,7 +32,7 @@ import {
   convertForeignTaxToBrl,
   convertForeignTaxToUsd
 } from "@tax-platform/rules";
-import type { Prisma, TaxCalculation } from "@prisma/client";
+import type { Prisma, TaxCalculation } from "../prisma-client.js";
 import { prisma } from "../db.js";
 import { buildStampWithOverrides, buildRuleVersionForJurisdictions, loadRulePatches } from "./rule-overrides.js";
 

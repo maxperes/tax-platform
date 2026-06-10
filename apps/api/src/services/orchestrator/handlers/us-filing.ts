@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "../../../prisma-client.js";
 import { prisma } from "../../../db.js";
 import { isTriagePending, isUsFilingPending, loadIntakeModulePlan, parseUsFilingInputs } from "../../intake-helpers.js";
 import { isFiscalProfileConfirmPending } from "../fiscal-orchestration.js";

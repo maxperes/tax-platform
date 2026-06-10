@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-import type { User } from "@prisma/client";
+import type { User } from "../prisma-client.js";
 import { prisma } from "../db.js";
 
 export const userCredentialsSchema = z.object({

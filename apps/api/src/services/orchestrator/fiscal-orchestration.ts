@@ -1,6 +1,6 @@
 import { fiscalResidenceSchema, type ConversationState, type FiscalResidence } from "@tax-platform/shared";
 import { deriveFiscalProfile } from "@tax-platform/rules";
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "../../prisma-client.js";
 import { prisma } from "../../db.js";
 import {
   coerceFiscalBooleansInPlace,

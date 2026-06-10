@@ -1,5 +1,5 @@
 import type { ConversationState } from "@tax-platform/shared";
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "../../prisma-client.js";
 import { prisma } from "../../db.js";
 import { runAssistantWithTools } from "../llm.js";
 import { config } from "../../config.js";

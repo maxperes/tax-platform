@@ -8,7 +8,7 @@ import {
   resolveUsdFromIncome
 } from "@tax-platform/rules";
 import type { CapitalGainCalculationInput } from "@tax-platform/shared";
-import type { CapitalGainCalculation } from "@prisma/client";
+import type { CapitalGainCalculation } from "../../prisma-client.js";
 import { buildStampWithOverrides, loadRulePatches } from "../rule-overrides.js";
 import { getFiscalProfile } from "./income.js";
 import { prisma } from "../../db.js";

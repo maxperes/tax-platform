@@ -1,6 +1,6 @@
 import { validateDeduction } from "@tax-platform/rules";
 import type { Deduction } from "@tax-platform/shared";
-import type { Deduction as DeductionRow } from "@prisma/client";
+import type { Deduction as DeductionRow } from "../../prisma-client.js";
 import { prisma } from "../../db.js";
 import { logDataChange } from "./data-change-log.js";
 

@@ -5,7 +5,7 @@ import {
   capitalGainCalculationSchema,
   type ConversationState
 } from "@tax-platform/shared";
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "../../prisma-client.js";
 import type OpenAI from "openai";
 import { prisma } from "../../db.js";
 import { normalizeForwardAdvance } from "../conversation-state-heal.js";

@@ -1,5 +1,5 @@
 import { fiscalResidenceSchema } from "@tax-platform/shared";
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "../../../prisma-client.js";
 import { prisma } from "../../../db.js";
 import { firstFiscalFieldPrompt } from "../../fiscal-intake.js";
 import {
