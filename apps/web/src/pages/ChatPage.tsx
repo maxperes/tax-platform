@@ -25,7 +25,7 @@ import {
 import { WHY_HINT_BY_STATE, formatCalcStatus, stepLabelForState, stepProgress } from "../lib/chat-constants";
 import { formatMoney, renderChatEmphasis } from "../lib/chat-utils";
 import { api, downloadAuthenticated, getToken, signOut, streamSessionMessage } from "../api";
-import { fetchTaxReport, taxReportQueryKey } from "./ReportPage";
+import { fetchTaxReport, taxReportQueryKey } from "../lib/tax-report";
 
 type Message = { id: string; role: string; content: string; createdAt: string };
 
@@ -158,10 +158,12 @@ export function ChatPage() {
     staleTime: 30_000
   });
 
+  const reportId = latestReportMeta?.id;
+
   const { data: fullReport } = useQuery({
-    queryKey: taxReportQueryKey(latestReportMeta!.id),
-    queryFn: () => fetchTaxReport(latestReportMeta!.id),
-    enabled: Boolean(latestReportMeta?.id),
+    queryKey: reportId ? taxReportQueryKey(reportId) : ["taxReportFull", "none"],
+    queryFn: () => fetchTaxReport(reportId!),
+    enabled: Boolean(reportId),
     staleTime: 15_000
   });
 

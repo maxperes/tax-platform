@@ -27,6 +27,10 @@ function ReportRoute() {
   return <ReportPage key={reportId} reportId={reportId} />;
 }
 
+function HomeRoute() {
+  return getToken() ? <Navigate to="/sessions" replace /> : <Navigate to="/login" replace />;
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -64,7 +68,7 @@ function AppRoutes() {
           </PrivateRoute>
         }
       />
-      <Route path="/" element={<Navigate to="/login" replace />} />
+      <Route path="/" element={<HomeRoute />} />
     </Routes>
   );
 }
