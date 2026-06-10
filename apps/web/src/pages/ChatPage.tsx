@@ -134,6 +134,7 @@ export function ChatPage() {
     queryFn: async (): Promise<LatestReportMeta | null> => {
       const token = getToken();
       const res = await fetch(`/api/report/latest?taxYear=${session!.taxYear}`, {
+        cache: "no-store",
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
       if (res.status === 404) return null;
@@ -352,12 +353,12 @@ export function ChatPage() {
     }
   }
 
-  async function openReport(reportId: string) {
+  async function prefetchReport(reportId: string) {
     await qc.prefetchQuery({
       queryKey: taxReportQueryKey(reportId),
-      queryFn: () => fetchTaxReport(reportId)
+      queryFn: () => fetchTaxReport(reportId),
+      staleTime: 60_000
     });
-    nav(`/report/${reportId}`);
   }
 
   async function jumpToStep(state: string) {
@@ -728,13 +729,13 @@ export function ChatPage() {
               ))}
               {latestReportMeta && (
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void openReport(latestReportMeta.id)}
+                  <Link
+                    to={`/report/${latestReportMeta.id}`}
+                    onMouseEnter={() => void prefetchReport(latestReportMeta.id)}
                     className="rounded-lg border border-emerald-600/60 bg-emerald-900/40 px-3 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-900/70"
                   >
                     View report
-                  </button>
+                  </Link>
                   <button type="button" onClick={() => void downloadLatestReportJson()} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs hover:border-emerald-600">
                     Download JSON
                   </button>
@@ -753,13 +754,13 @@ export function ChatPage() {
             <div className="mt-3 rounded-lg border border-emerald-800/50 bg-emerald-950/25 px-3 py-2 text-xs text-emerald-100 space-y-2">
               {latestReportMeta ? (
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void openReport(latestReportMeta.id)}
+                  <Link
+                    to={`/report/${latestReportMeta.id}`}
+                    onMouseEnter={() => void prefetchReport(latestReportMeta.id)}
                     className="rounded-lg border border-emerald-600/60 bg-emerald-900/40 px-3 py-1.5 text-xs font-medium text-emerald-100"
                   >
                     View report
-                  </button>
+                  </Link>
                   <button type="button" onClick={() => void downloadLatestReportJson()} className="rounded-lg border border-emerald-600/60 px-3 py-1.5 text-xs">
                     Download JSON
                   </button>

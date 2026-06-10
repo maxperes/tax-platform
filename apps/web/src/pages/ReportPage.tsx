@@ -14,11 +14,10 @@ export function ReportPage({ reportId: reportIdProp }: { reportId?: string }) {
   const reportId = reportIdProp ?? reportIdParam;
 
   const { data: report, isPending, isError, isFetching } = useQuery({
-    queryKey: taxReportQueryKey(reportId!),
+    queryKey: taxReportQueryKey(reportId ?? ""),
     queryFn: () => fetchTaxReport(reportId!),
     enabled: Boolean(reportId),
-    refetchOnMount: "always",
-    retry: 1
+    staleTime: 60_000
   });
 
   const { data: rulesFreshness } = useQuery({
@@ -30,19 +29,21 @@ export function ReportPage({ reportId: reportIdProp }: { reportId?: string }) {
     enabled: Boolean(report?.taxYear)
   });
 
-  if (isPending || (isFetching && !report)) return <LoadingShell message="Loading report…" />;
-
-  if (isError || !report) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-6">
-        <div className="text-center space-y-4">
-          <p className="text-rose-300">Report not found.</p>
-          <Link to="/sessions" className="text-emerald-400 hover:underline">
-            Back to sessions
-          </Link>
+  if (!report) {
+    if (isPending || isFetching) return <LoadingShell message="Loading report…" />;
+    if (isError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center p-6">
+          <div className="text-center space-y-4">
+            <p className="text-rose-300">Report not found.</p>
+            <Link to="/sessions" className="text-emerald-400 hover:underline">
+              Back to sessions
+            </Link>
+          </div>
         </div>
-      </div>
-    );
+      );
+    }
+    return <LoadingShell message="Loading report…" />;
   }
 
   const summary = report.summaryJson;

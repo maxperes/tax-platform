@@ -37,6 +37,7 @@ export function taxReportQueryKey(reportId: string) {
 export async function fetchTaxReport(reportId: string): Promise<FullTaxReport> {
   const token = getToken();
   const res = await fetch(`/api/report/${reportId}`, {
+    cache: "no-store",
     headers: token ? { Authorization: `Bearer ${token}` } : {}
   });
   if (!res.ok) throw new Error("Report not found");

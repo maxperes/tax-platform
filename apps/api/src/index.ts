@@ -23,9 +23,14 @@ import { meRouter } from "./routes/me.js";
 import { adminRouter } from "./routes/admin.js";
 
 const app = express();
+app.set("etag", false);
 app.use(helmet());
 app.use(cors({ origin: config.corsOrigin, credentials: true }));
 app.use(express.json({ limit: "2mb" }));
+app.use("/api", (_req, res, next) => {
+  res.set("Cache-Control", "no-store, private");
+  next();
+});
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
