@@ -3,6 +3,7 @@ import { LoadingShell } from "./components/LoadingShell";
 
 export type AuthConfig = {
   registrationEnabled: boolean;
+  requiresApproval?: boolean;
   privacyPolicyUrl: string | null;
   privacyPolicyVersion: string;
 };

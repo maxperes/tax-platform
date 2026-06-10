@@ -23,6 +23,7 @@ export const authRouter = Router();
 authRouter.get("/config", (_req, res) => {
   res.json({
     registrationEnabled: config.registrationEnabled,
+    requiresApproval: true,
     privacyPolicyUrl: config.privacyPolicyUrl || null,
     privacyPolicyVersion: config.privacyPolicyVersion
   });
@@ -45,8 +46,10 @@ authRouter.post("/register", async (req, res) => {
     const user = await createUserWithConsent(() => createUser(email, password), {
       ipAddress: req.ip
     });
-    const token = signToken({ sub: user.id, email: user.email });
-    res.status(201).json({ token, user: { id: user.id, email: user.email } });
+    res.status(201).json({
+      message: "Account created. An administrator will review your request.",
+      user: { id: user.id, email: user.email, status: user.status }
+    });
   } catch (err) {
     if (err instanceof z.ZodError) {
       res.status(400).json({ error: err.flatten() });
@@ -72,6 +75,19 @@ authRouter.post("/login", async (req, res) => {
     res.status(401).json({ error: "Invalid credentials" });
     return;
   }
-  const token = signToken({ sub: user.id, email: user.email });
-  res.json({ token, user: { id: user.id, email: user.email } });
+
+  if (user.status === "pending") {
+    res.status(403).json({ error: "Account pending approval" });
+    return;
+  }
+  if (user.status === "rejected") {
+    res.status(403).json({ error: "Account rejected" });
+    return;
+  }
+
+  const token = signToken({ sub: user.id, email: user.email, isAdmin: user.isAdmin });
+  res.json({
+    token,
+    user: { id: user.id, email: user.email, status: user.status, isAdmin: user.isAdmin }
+  });
 });

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { api, signOut, type SessionListItem } from "../api";
+import { api, signOut, type SessionListItem, type UserProfile } from "../api";
 import { LoadingShell } from "../components/LoadingShell";
 import { stepLabelForState } from "../lib/chat-constants";
 
@@ -29,6 +29,11 @@ export function SessionsPage() {
   const { data: sessions = [], isLoading, isError, refetch } = useQuery({
     queryKey: ["sessions"],
     queryFn: () => api<SessionListItem[]>("/api/sessions")
+  });
+
+  const { data: profile } = useQuery({
+    queryKey: ["me-profile"],
+    queryFn: () => api<UserProfile>("/api/me/profile")
   });
 
   const inProgress = sessions.filter((s) => s.state !== "complete" && s.taxYear === currentYear);
@@ -134,6 +139,11 @@ export function SessionsPage() {
         )}
 
         <div className="flex flex-wrap gap-3 pt-2 border-t border-slate-800 text-sm">
+          {profile?.isAdmin && (
+            <Link to="/admin/users" className="text-emerald-400 hover:underline">
+              User approvals
+            </Link>
+          )}
           <Link to="/privacy" className="text-emerald-400 hover:underline">
             Privacy
           </Link>

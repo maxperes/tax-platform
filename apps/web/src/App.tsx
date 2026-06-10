@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { AuthConfigProvider, useAuthConfig } from "./auth-config";
 import { LoginPage } from "./pages/LoginPage";
 import { SignupPage } from "./pages/SignupPage";
@@ -7,10 +8,32 @@ import { SessionsPage } from "./pages/SessionsPage";
 import { ChatPage } from "./pages/ChatPage";
 import { PrivacyPage } from "./pages/PrivacyPage";
 import { ReportPage } from "./pages/ReportPage";
-import { getToken } from "./api";
+import { AdminUsersPage } from "./pages/AdminUsersPage";
+import { api, getToken, type UserProfile } from "./api";
+import { LoadingShell } from "./components/LoadingShell";
 
 function RequireAuth({ children }: { children: ReactNode }) {
   return getToken() ? children : <Navigate to="/login" replace />;
+}
+
+function RequireAdmin({ children }: { children: ReactNode }) {
+  const token = getToken();
+  const { data: profile, isLoading } = useQuery({
+    queryKey: ["me-profile"],
+    queryFn: () => api<UserProfile>("/api/me/profile"),
+    enabled: !!token
+  });
+
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+  if (isLoading) {
+    return <LoadingShell message="Checking access…" />;
+  }
+  if (!profile?.isAdmin) {
+    return <Navigate to="/sessions" replace />;
+  }
+  return children;
 }
 
 function SignupRoute() {
@@ -28,7 +51,20 @@ function ReportRoute() {
 }
 
 function HomeRedirect() {
-  return getToken() ? <Navigate to="/sessions" replace /> : <Navigate to="/login" replace />;
+  const token = getToken();
+  const { data: profile, isLoading } = useQuery({
+    queryKey: ["me-profile"],
+    queryFn: () => api<UserProfile>("/api/me/profile"),
+    enabled: !!token
+  });
+
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+  if (isLoading) {
+    return <LoadingShell message="Loading…" />;
+  }
+  return <Navigate to={profile?.isAdmin ? "/admin/users" : "/sessions"} replace />;
 }
 
 function AppRoutes() {
@@ -45,6 +81,14 @@ function AppRoutes() {
           <RequireAuth>
             <SessionsPage />
           </RequireAuth>
+        }
+      />
+      <Route
+        path="/admin/users"
+        element={
+          <RequireAdmin>
+            <AdminUsersPage />
+          </RequireAdmin>
         }
       />
       <Route

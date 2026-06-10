@@ -15,7 +15,11 @@ export class UserAlreadyExistsError extends Error {
   }
 }
 
-export async function createUser(email: string, password: string): Promise<User> {
+async function createUserRecord(
+  email: string,
+  password: string,
+  opts: { status: "pending" | "approved"; isAdmin?: boolean }
+): Promise<User> {
   const parsed = userCredentialsSchema.safeParse({ email, password });
   if (!parsed.success) {
     throw parsed.error;
@@ -28,6 +32,25 @@ export async function createUser(email: string, password: string): Promise<User>
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);
   return prisma.user.create({
-    data: { email: parsed.data.email, passwordHash }
+    data: {
+      email: parsed.data.email,
+      passwordHash,
+      status: opts.status,
+      isAdmin: opts.isAdmin ?? false
+    }
   });
+}
+
+/** Self-registration: account awaits admin approval. */
+export async function createUser(email: string, password: string): Promise<User> {
+  return createUserRecord(email, password, { status: "pending", isAdmin: false });
+}
+
+/** Admin/CLI provisioning: account is immediately active. */
+export async function createApprovedUser(
+  email: string,
+  password: string,
+  opts?: { isAdmin?: boolean }
+): Promise<User> {
+  return createUserRecord(email, password, { status: "approved", isAdmin: opts?.isAdmin });
 }

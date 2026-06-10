@@ -22,7 +22,7 @@ meRouter.use(authMiddleware);
 meRouter.get("/profile", async (req, res) => {
   const user = await prisma.user.findUnique({
     where: { id: req.user!.sub },
-    select: { id: true, email: true, createdAt: true }
+    select: { id: true, email: true, isAdmin: true, status: true, createdAt: true }
   });
   res.json(user);
 });

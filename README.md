@@ -78,22 +78,34 @@ Confirm all statutory rates with a tax SME before production use.
 Set in production:
 
 - `JWT_SECRET` — strong random value (required)
-- `ADMIN_TOKEN` — for admin routes
-- `REGISTRATION_ENABLED=false` — optional; defaults to **open** self-service signup. Set to `false` for invite-only pilots.
+- `ADMIN_TOKEN` — for script/API provisioning and rule-override routes
+- `REGISTRATION_ENABLED=false` — optional; when unset, self-service signup is open. Set to `false` to disable public registration entirely.
 
-For invite-only pilots, provision accounts:
+### User registration and approval
+
+When registration is enabled, new signups create a **pending** account. Users cannot sign in until an administrator approves them at `/admin/users` in the web app.
+
+Bootstrap the first admin (approved immediately):
+
+```bash
+pnpm --filter @tax-platform/api create-user -- admin@example.com 'secure-password' --admin
+```
+
+For invite-only pilots (no public signup), set `REGISTRATION_ENABLED=false` and provision accounts:
 
 ```bash
 pnpm --filter @tax-platform/api create-user -- email@example.com 'secure-password'
 ```
+
+Admin-created accounts are **approved** automatically and skip the review queue.
 
 ## Main API routes
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/auth/config` | Public auth flags |
-| POST | `/api/auth/register` | Register (403 when registration disabled) |
-| POST | `/api/auth/login` | Login |
+| POST | `/api/auth/register` | Register (creates pending account; 403 when registration disabled) |
+| POST | `/api/auth/login` | Login (403 while pending or rejected) |
 | POST | `/api/sessions` | Create conversation session |
 | GET | `/api/sessions/:id` | Session + messages |
 | POST | `/api/sessions/:id/messages` | Send chat message |
@@ -118,7 +130,11 @@ pnpm --filter @tax-platform/api create-user -- email@example.com 'secure-passwor
 | GET | `/api/report/:id/download.html` | Download printable HTML |
 | GET | `/api/me/data-export` | Full account data export |
 | POST | `/api/me/delete-account` | Delete account |
-| POST | `/api/admin/users` | Create user (admin token) |
+| POST | `/api/admin/users` | Create approved user (admin token) |
+| GET | `/api/admin/users?status=` | List users (admin JWT) |
+| POST | `/api/admin/users/:id/approve` | Approve pending user (admin JWT) |
+| POST | `/api/admin/users/:id/reject` | Reject user (admin JWT) |
+| PATCH | `/api/admin/users/:id` | Set `isAdmin` (admin JWT) |
 | GET | `/api/tax-rules/freshness?taxYear=` | Compare stored calculations to active rule stamp |
 | POST | `/api/admin/rule-overrides` | Upsert rule override (admin token) |
 | PATCH | `/api/admin/rule-overrides/:id` | Update override value |

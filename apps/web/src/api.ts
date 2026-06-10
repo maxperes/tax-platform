@@ -13,6 +13,21 @@ export function signOut(): void {
   setToken(null);
 }
 
+export type UserProfile = {
+  id: string;
+  email: string;
+  isAdmin: boolean;
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+};
+
+export type LoginResponse = {
+  token: string;
+  user: Pick<UserProfile, "id" | "email" | "status" | "isAdmin">;
+};
+
+export type AdminUserListItem = Pick<UserProfile, "id" | "email" | "status" | "isAdmin" | "createdAt">;
+
 export type SessionListItem = {
   id: string;
   taxYear: number;

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuthConfig } from "../auth-config";
-import { api, setToken } from "../api";
+import { api, setToken, type LoginResponse } from "../api";
 
 export function LoginPage() {
   const nav = useNavigate();
@@ -16,12 +16,12 @@ export function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const res = await api<{ token: string }>("/api/auth/login", {
+      const res = await api<LoginResponse>("/api/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, password })
       });
       setToken(res.token);
-      nav("/sessions");
+      nav(res.user.isAdmin ? "/admin/users" : "/sessions");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -73,7 +73,7 @@ export function LoginPage() {
           <p className="text-center text-sm text-slate-500 mt-4">
             No account?{" "}
             <Link className="text-emerald-400 hover:underline" to="/signup">
-              Create one
+              Request access
             </Link>
           </p>
         )}

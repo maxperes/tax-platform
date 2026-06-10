@@ -3,9 +3,10 @@ import { z } from "zod";
 import { prisma } from "../db.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { adminTokenRequiredMiddleware } from "../middleware/admin-token.js";
+import { requireAdminMiddleware } from "../middleware/require-admin.js";
 import { config } from "../config.js";
 import { asyncHandler } from "../middleware/async-handler.js";
-import { createUser, userCredentialsSchema } from "../services/create-user.js";
+import { createApprovedUser, userCredentialsSchema } from "../services/create-user.js";
 import {
   deleteUserAccountAsAdmin,
   DeletionBlockedError,
@@ -54,8 +55,10 @@ adminRouter.post(
     }
 
     try {
-      const user = await createUser(parsed.data.email, parsed.data.password);
-      res.status(201).json({ user: { id: user.id, email: user.email } });
+      const user = await createApprovedUser(parsed.data.email, parsed.data.password);
+      res.status(201).json({
+        user: { id: user.id, email: user.email, status: user.status, isAdmin: user.isAdmin }
+      });
     } catch (err) {
       if (err instanceof Error && err.name === "UserAlreadyExistsError") {
         res.status(409).json({ error: err.message });
@@ -88,6 +91,85 @@ adminRouter.delete(
 );
 
 adminRouter.use(authMiddleware);
+
+const userStatusSchema = z.enum(["pending", "approved", "rejected"]);
+
+const userListSelect = {
+  id: true,
+  email: true,
+  status: true,
+  isAdmin: true,
+  createdAt: true
+} as const;
+
+adminRouter.get(
+  "/users",
+  requireAdminMiddleware,
+  asyncHandler(async (req, res) => {
+    const status = userStatusSchema.optional().parse(req.query.status);
+    const users = await prisma.user.findMany({
+      where: status ? { status } : undefined,
+      select: userListSelect,
+      orderBy: { createdAt: "desc" }
+    });
+    res.json({ users });
+  })
+);
+
+adminRouter.post(
+  "/users/:id/approve",
+  requireAdminMiddleware,
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.user.findUnique({ where: { id: String(req.params.id) } });
+    if (!existing) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    const user = await prisma.user.update({
+      where: { id: existing.id },
+      data: { status: "approved" },
+      select: userListSelect
+    });
+    res.json({ user });
+  })
+);
+
+adminRouter.post(
+  "/users/:id/reject",
+  requireAdminMiddleware,
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.user.findUnique({ where: { id: String(req.params.id) } });
+    if (!existing) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    const user = await prisma.user.update({
+      where: { id: existing.id },
+      data: { status: "rejected" },
+      select: userListSelect
+    });
+    res.json({ user });
+  })
+);
+
+adminRouter.patch(
+  "/users/:id",
+  requireAdminMiddleware,
+  asyncHandler(async (req, res) => {
+    const body = z.object({ isAdmin: z.boolean() }).parse(req.body);
+    const existing = await prisma.user.findUnique({ where: { id: String(req.params.id) } });
+    if (!existing) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    const user = await prisma.user.update({
+      where: { id: existing.id },
+      data: { isAdmin: body.isAdmin },
+      select: userListSelect
+    });
+    res.json({ user });
+  })
+);
 
 /** List rule overrides merged at calculation time. */
 adminRouter.get("/rule-overrides", asyncHandler(async (req, res) => {
