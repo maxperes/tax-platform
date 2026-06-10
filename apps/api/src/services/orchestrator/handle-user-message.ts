@@ -1,0 +1,79 @@
+import type { ConversationState } from "@tax-platform/shared";
+import { prisma } from "../../db.js";
+import { handleAdvanceIntent } from "./handlers/advance-intent.js";
+import { handleChatIncomeAmendment } from "./handlers/chat-income-amendment.js";
+import { handleFiscalConfirm } from "./handlers/fiscal-confirm.js";
+import { handleIncomeDone } from "./handlers/income-done.js";
+import { handleOffTopic } from "./handlers/off-topic.js";
+import { handleReportFinalize } from "./handlers/report-finalize.js";
+import { handleRewind } from "./handlers/rewind.js";
+import { handleStepAdvance } from "./handlers/step-advance.js";
+import { handleTriage } from "./handlers/triage.js";
+import { handleTrust } from "./handlers/trust.js";
+import { handleUsFiling } from "./handlers/us-filing.js";
+import { runLlmTurn } from "./llm-turn.js";
+import {
+  getContext,
+  replyAndReturn,
+  type HandlerContext,
+  type HandlerResult
+} from "./session-context.js";
+
+type HandlerFn = (h: HandlerContext) => Promise<HandlerResult>;
+
+const HANDLER_PIPELINE: HandlerFn[] = [
+  handleTrust,
+  handleTriage,
+  handleUsFiling,
+  handleFiscalConfirm,
+  handleRewind,
+  handleIncomeDone,
+  handleStepAdvance,
+  handleReportFinalize,
+  handleAdvanceIntent,
+  handleOffTopic,
+  handleChatIncomeAmendment
+];
+
+export async function handleUserMessage(sessionId: string, userContent: string): Promise<{
+  assistantText: string;
+  sessionState: ConversationState;
+}> {
+  const session = await prisma.conversationSession.findUnique({ where: { id: sessionId } });
+  if (!session) throw new Error("Session not found");
+
+  await prisma.conversationMessage.create({
+    data: { sessionId, role: "user", content: userContent }
+  });
+
+  const messages = await prisma.conversationMessage.findMany({
+    where: { sessionId },
+    orderBy: { createdAt: "asc" },
+    take: 40
+  });
+
+  const handlerCtx: HandlerContext = {
+    sessionId,
+    session: {
+      id: session.id,
+      userId: session.userId,
+      taxYear: session.taxYear,
+      state: session.state,
+      contextJson: session.contextJson,
+      requiresAdditionalReview: session.requiresAdditionalReview
+    },
+    userContent,
+    messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    ctx: getContext(session)
+  };
+
+  for (const handler of HANDLER_PIPELINE) {
+    const result = await handler(handlerCtx);
+    if (result) {
+      return replyAndReturn(sessionId, result.assistantText, false);
+    }
+  }
+
+  const assistantText = await runLlmTurn(handlerCtx);
+  return replyAndReturn(sessionId, assistantText, true);
+}

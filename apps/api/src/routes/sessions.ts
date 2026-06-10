@@ -5,7 +5,11 @@ import { prisma } from "../db.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/async-handler.js";
 import { CONVERSATION_STATES, fiscalResidenceSchema } from "@tax-platform/shared";
-import { handleUserMessage, initialAssistantMessage } from "../services/orchestrator.js";
+import {
+  buildAssistantMessageForExistingFiscalProfile,
+  handleUserMessage,
+  initialAssistantMessage
+} from "../services/orchestrator.js";
 
 export const sessionsRouter = Router();
 sessionsRouter.use(authMiddleware);
@@ -31,6 +35,12 @@ sessionsRouter.post("/", asyncHandler(async (req, res) => {
     const parsed = fiscalResidenceSchema.safeParse(existingProfile.data);
     if (parsed.success) {
       contextJson = { _triagePending: true, _fiscalProfileConfirmPending: true };
+      firstMessage = buildAssistantMessageForExistingFiscalProfile({
+        taxYear: body.taxYear,
+        data: parsed.data,
+        derivedProfile: existingProfile.derivedProfile,
+        requiresAdditionalReview: existingProfile.requiresAdditionalReview
+      });
     }
   }
   const session = await prisma.conversationSession.create({

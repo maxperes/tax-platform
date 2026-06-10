@@ -51,7 +51,7 @@ const FISCAL_TAIL_FIELDS: FiscalFieldDef[] = [
   { key: "email", prompt: "And what email should we use for your account notifications?" }
 ];
 
-function parseBool(text: string): boolean | undefined {
+export function parseBool(text: string): boolean | undefined {
   const t = text.trim().toLowerCase();
   if (["yes", "y", "true", "1", "sim"].includes(t)) return true;
   if (["no", "n", "false", "0", "nao", "não"].includes(t)) return false;

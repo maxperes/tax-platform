@@ -26,11 +26,11 @@ export type IntakeModulePlan = {
   intakeGoal?: IntakeGoal;
 };
 
-function escapeTableCell(s: string): string {
+export function escapeTableCell(s: string): string {
   return s.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 }
 
-function formatAmount(n: number, currency: string): string {
+export function formatAmount(n: number, currency: string): string {
   const rounded = Math.round(n * 100) / 100;
   const s = Math.abs(rounded).toLocaleString("en-US", { maximumFractionDigits: 2 });
   return `${s} ${currency}`;
