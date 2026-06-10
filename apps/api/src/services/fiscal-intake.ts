@@ -292,7 +292,8 @@ export function looksLikeFiscalFieldAnswer(key: string, text: string): boolean {
     return parseBool(t) !== undefined;
   }
   if (key === "cpf" || key === "foreignTaxId") {
-    return t.length >= 1;
+    if (/^(none|n\/a|skip)$/i.test(t)) return true;
+    return /\d/.test(t) && t.length >= 4;
   }
   if (key === "daysInBrazilCalendarYear" || key === "daysInUSACalendarYear") {
     const n = Number(t);
@@ -304,8 +305,74 @@ export function looksLikeFiscalFieldAnswer(key: string, text: string): boolean {
     const normalized = normalizeCountryCode(t);
     return /^[A-Za-z]{2,3}$/.test(normalized);
   }
-  if (key === "fullName") return /[A-Za-zÀ-ÿ]/.test(t) && t.length >= 2;
+  if (key === "fullName") {
+    const lower = t.toLowerCase();
+    if (/^(what|how|why|when|where|who|which|can|could|should|is|are|do|does|tell me about)\b/.test(lower)) {
+      return false;
+    }
+    if (/\?$/.test(t)) return false;
+    return /[A-Za-zÀ-ÿ]/.test(t) && t.length >= 2;
+  }
   return true;
+}
+
+const BOOLEAN_FISCAL_FIELD_KEYS = new Set([
+  "isFiscalResidentBrazil",
+  "isFiscalResidentUSA",
+  "fiscalResidenceOtherCountry",
+  "hasUSCitizenship",
+  "hasGreenCard",
+  "declaredPermanentExitBrazil",
+  "physicallyLivesInBrazil",
+  "hasPermanentAddressBrazil",
+  "hasPermanentAddressUSA",
+  "hasUSWorkVisa",
+  "hasDependentsBrazilOrAbroad"
+]);
+
+export function isBooleanFiscalField(key: string): boolean {
+  return BOOLEAN_FISCAL_FIELD_KEYS.has(key);
+}
+
+const FISCAL_FIELD_ASSISTANT_HINTS: Record<string, RegExp[]> = {
+  currentResidenceCountry: [/currently live in/i, /country do you (currently )?live/i],
+  nationalityCountry: [/nationality/i, /country of citizenship/i],
+  isFiscalResidentBrazil: [/fiscal resident of brazil/i],
+  isFiscalResidentUSA: [/fiscal resident of the united states/i, /fiscal resident of the u\.?s\.?/i],
+  fiscalResidenceOtherCountry: [/fiscal residence in any other country/i, /other country besides brazil and the usa/i],
+  daysInBrazilCalendarYear: [/days.*brazil/i, /spent in brazil/i],
+  daysInUSACalendarYear: [/days.*(united states|u\.?s\.?)/i, /spent in the united states/i],
+  hasUSCitizenship: [/u\.?s\.? citizenship/i],
+  hasGreenCard: [/green card/i],
+  declaredPermanentExitBrazil: [/definitive exit.*brazil/i, /exit declaration from brazil/i],
+  cpf: [/\bcpf\b/i],
+  foreignTaxId: [/foreign tax id/i, /\bssn\b/i, /\bitin\b/i],
+  physicallyLivesInBrazil: [/physically live in brazil/i],
+  hasPermanentAddressBrazil: [/permanent address in brazil/i],
+  hasPermanentAddressUSA: [/permanent address in the united states/i, /permanent address in the u\.?s\.?/i],
+  hasUSWorkVisa: [/work visa/i],
+  hasDependentsBrazilOrAbroad: [/dependents/i],
+  birthDate: [/birth date/i, /date of birth/i, /when (is|was|were) your birth/i, /when (is|were) you born/i],
+  fullName: [/full (legal )?name/i, /what is your name/i, /provide your name/i],
+  email: [/\bemail\b/i, /e-mail/i]
+};
+
+/** Match the fiscal field the assistant most recently asked about (among pending keys). */
+export function inferFiscalFieldFromAssistantText(text: string, pendingKeys: string[]): string | undefined {
+  let bestKey: string | undefined;
+  let bestPos = -1;
+  for (const key of pendingKeys) {
+    const hints = FISCAL_FIELD_ASSISTANT_HINTS[key];
+    if (!hints) continue;
+    for (const re of hints) {
+      const m = re.exec(text);
+      if (m && m.index >= bestPos) {
+        bestPos = m.index;
+        bestKey = key;
+      }
+    }
+  }
+  return bestKey;
 }
 
 export function getFiscalQuestionForContext(context: Record<string, unknown>): string {

@@ -290,4 +290,27 @@ describe("handleUserMessage orchestrator pipeline", () => {
     expect(result.assistantText).toMatch(/nationality|Brazil|BR/i);
     expect(store.session?.contextJson).toMatchObject({ currentResidenceCountry: "BR" });
   });
+
+  it("does not treat birth date answer as off-topic when assistant asked birth date early", async () => {
+    seedSession({
+      state: "fiscal_residence",
+      contextJson: {
+        _triagePending: false,
+        intakeGoal: "full_annual",
+        currentResidenceCountry: "BR",
+        nationalityCountry: "BR",
+        isFiscalResidentBrazil: true
+      }
+    });
+    store.messages.push({
+      role: "assistant",
+      content:
+        "Thanks for confirming! When is your birth date? Please provide it in the format YYYY-MM-DD.",
+      createdAt: new Date()
+    });
+
+    const result = await handleUserMessage("sess-1", "1988-01-01");
+    expect(result.assistantText).not.toMatch(/can't answer unrelated/i);
+    expect(store.session?.contextJson).toMatchObject({ birthDate: "1988-01-01" });
+  });
 });

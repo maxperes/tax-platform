@@ -1,16 +1,11 @@
 import type { ConversationState } from "@tax-platform/shared";
 import { parsePaymentLines } from "../income-multi-parse.js";
-import {
-  getActiveFiscalFieldOrder,
-  isValidFiscalFieldValue,
-  looksLikeFiscalFieldAnswer
-} from "../fiscal-intake.js";
 import { isTriagePending, parseIntakeGoal, parseUsFilingInputs } from "../intake-helpers.js";
 import {
-  getFiscalResidenceMergedFields,
   isConfirmReplaceFiscalProfile,
   isConfirmUseStoredFiscalProfile,
-  isFiscalProfileConfirmPending
+  isFiscalProfileConfirmPending,
+  resolveFiscalFieldForUserAnswer
 } from "./fiscal-orchestration.js";
 
 export function isHelpIntent(userContent: string): boolean {
@@ -48,7 +43,8 @@ export function isTrustOrComplianceConcern(userContent: string): boolean {
 export function isLikelyOffTopicUserMessage(
   state: ConversationState,
   context: Record<string, unknown>,
-  userContent: string
+  userContent: string,
+  lastAssistantText?: string
 ): boolean {
   const t = userContent.trim();
   if (!t) return false;
@@ -75,11 +71,11 @@ export function isLikelyOffTopicUserMessage(
       return true;
     }
     if (isFiscalClarificationQuestion(t)) return false;
-    const merged = getFiscalResidenceMergedFields(context);
-    const expectedKey = getActiveFiscalFieldOrder(merged).find((f) => !isValidFiscalFieldValue(f.key, merged[f.key]))
-      ?.key;
-    if (!expectedKey) return false;
-    return !looksLikeFiscalFieldAnswer(expectedKey, t);
+    const chitChat =
+      /\b(weather|joke|recipe|movie|sport|football|soccer|nba|who won|world cup|translate|poem|story|chatgpt|linux|windows|macos|javascript|python)\b/i;
+    if (chitChat.test(t)) return true;
+    if (resolveFiscalFieldForUserAnswer(context, t, lastAssistantText)) return false;
+    return true;
   }
 
   if (state === "income_capture") {
@@ -155,17 +151,5 @@ export function lastAssistantAskedProceed(lastAssistantText: string): boolean {
     /\bproceed\s+to\s+(the\s+)?next\s+step\b/i.test(lower) ||
     /\bwould\s+you\s+like\s+to\s+proceed\b/i.test(lower) ||
     /\bmove\s+on\s+to\s+the\s+next\b/i.test(lower)
-  );
-}
-
-export function messageAlreadyAsksQuestion(text: string): boolean {
-  if (text.includes("?")) return true;
-  const lower = text.toLowerCase();
-  return (
-    /\bplease provide\b/.test(lower) ||
-    /\bwhat is your\b/.test(lower) ||
-    /\bwhen were you born\b/.test(lower) ||
-    /\btell me your\b/.test(lower) ||
-    /\bshare your\b/.test(lower)
   );
 }

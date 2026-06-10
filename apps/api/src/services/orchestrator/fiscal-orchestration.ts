@@ -9,6 +9,8 @@ import {
   formatFiscalValidationError,
   getActiveFiscalFieldOrder,
   getFiscalQuestionForContext,
+  inferFiscalFieldFromAssistantText,
+  isBooleanFiscalField,
   isValidFiscalFieldValue,
   looksLikeFiscalFieldAnswer,
   parseBool,
@@ -182,23 +184,80 @@ export function getFiscalResidenceCurrentQuestion(context: Record<string, unknow
   return getFiscalQuestionForContext(getFiscalResidenceMergedFields(context));
 }
 
+/** If the assistant message asks about a pending fiscal field, persist it as _lastAskedKey. */
+export function syncLastAskedKeyFromAssistantText(
+  context: Record<string, unknown>,
+  assistantText: string
+): Record<string, unknown> {
+  const merged = getFiscalResidenceMergedFields(context);
+  const pendingKeys = getActiveFiscalFieldOrder(merged)
+    .filter((f) => !isValidFiscalFieldValue(f.key, merged[f.key]))
+    .map((f) => f.key);
+  const inferred = inferFiscalFieldFromAssistantText(assistantText, pendingKeys);
+  if (!inferred || context._lastAskedKey === inferred) return context;
+  return { ...context, _lastAskedKey: inferred };
+}
+
+/**
+ * Resolve which pending fiscal field the user is answering.
+ * Supports LLM-driven question order (e.g. birth date before core yes/no fields).
+ */
+export function resolveFiscalFieldForUserAnswer(
+  context: Record<string, unknown>,
+  userContent: string,
+  lastAssistantText?: string
+): string | undefined {
+  const t = userContent.trim();
+  if (!t) return undefined;
+  const merged = getFiscalResidenceMergedFields(context);
+  const pending = getActiveFiscalFieldOrder(merged).filter(
+    (f) => !isValidFiscalFieldValue(f.key, merged[f.key])
+  );
+  if (pending.length === 0) return undefined;
+
+  const pendingKeys = pending.map((f) => f.key);
+  const lastAsked = context._lastAskedKey;
+  if (
+    typeof lastAsked === "string" &&
+    pendingKeys.includes(lastAsked) &&
+    looksLikeFiscalFieldAnswer(lastAsked, t)
+  ) {
+    return lastAsked;
+  }
+
+  if (lastAssistantText) {
+    const fromAssistant = inferFiscalFieldFromAssistantText(lastAssistantText, pendingKeys);
+    if (fromAssistant && looksLikeFiscalFieldAnswer(fromAssistant, t)) {
+      return fromAssistant;
+    }
+  }
+
+  const matches = pending.filter((f) => looksLikeFiscalFieldAnswer(f.key, t));
+  if (matches.length === 1) return matches[0]!.key;
+
+  const unambiguous = matches.filter((f) => !isBooleanFiscalField(f.key));
+  if (unambiguous.length === 1) return unambiguous[0]!.key;
+
+  const firstPending = pending[0]!.key;
+  if (looksLikeFiscalFieldAnswer(firstPending, t)) return firstPending;
+  return undefined;
+}
+
 /**
  * When the LLM omits the user's answer in submit_fiscal_residence, merge the raw message
- * into the first missing fiscal field if it matches that field's shape.
+ * into the matching pending fiscal field.
  */
 export function fuseUserMessageIntoFiscalContext(
   context: Record<string, unknown>,
-  userContent: string
+  userContent: string,
+  lastAssistantText?: string
 ): Record<string, unknown> | null {
   if (isFiscalProfileConfirmPending(context)) return null;
   const t = userContent.trim();
   if (!t) return null;
-  const merged = getFiscalResidenceMergedFields(context);
-  const expectedKey = getActiveFiscalFieldOrder(merged).find((f) => !isValidFiscalFieldValue(f.key, merged[f.key]))
-    ?.key;
-  if (!expectedKey) return null;
-  if (!looksLikeFiscalFieldAnswer(expectedKey, t)) return null;
-  const next = { ...context, [expectedKey]: coerceFiscalFieldValue(expectedKey, t) };
+  const fieldKey = resolveFiscalFieldForUserAnswer(context, t, lastAssistantText);
+  if (!fieldKey) return null;
+  const next = { ...context, [fieldKey]: coerceFiscalFieldValue(fieldKey, t) };
   coerceFiscalBooleansInPlace(next);
   return next;
 }
@@ -269,9 +328,11 @@ export async function templateFiscalResidence(
   const c = { ...(session.contextJson as Record<string, unknown>) ?? {} };
   const mergedBefore = getFiscalResidenceMergedFields(c);
   const order = getActiveFiscalFieldOrder(mergedBefore);
-  const lastAsked = (c._lastAskedKey as string | undefined) ?? order[0]!.key;
-  const currentField = order.find((f) => f.key === lastAsked) ?? order[0]!;
-  c[currentField.key] = coerceFiscalFieldValue(currentField.key, userContent);
+  const fieldKey = resolveFiscalFieldForUserAnswer(c, userContent);
+  if (!fieldKey) {
+    return `${getFiscalQuestionForContext(mergedBefore)}\n\nPlease answer in the format requested above.`;
+  }
+  c[fieldKey] = coerceFiscalFieldValue(fieldKey, userContent);
   coerceFiscalBooleansInPlace(c);
 
   const merged = getFiscalResidenceMergedFields(c);

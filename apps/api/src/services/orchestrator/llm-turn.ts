@@ -6,10 +6,11 @@ import { config } from "../../config.js";
 import { loadIntakeModulePlan } from "../intake-helpers.js";
 import {
   fuseUserMessageIntoFiscalContext,
+  syncLastAskedKeyFromAssistantText,
   templateFiscalResidence,
   tryCompleteFiscalResidenceFromContext
 } from "./fiscal-orchestration.js";
-import { messageAlreadyAsksQuestion } from "./intents.js";
+import { lastAssistantContent } from "./intents.js";
 import {
   incomeCheckpointMessage,
   intakeRedirectForState,
@@ -60,7 +61,7 @@ export async function runLlmTurn(h: HandlerContext): Promise<string> {
   let newCtx = getContext(refreshed);
 
   if (prevState === "fiscal_residence" && newState === "fiscal_residence") {
-    const fused = fuseUserMessageIntoFiscalContext(newCtx, userContent);
+    const fused = fuseUserMessageIntoFiscalContext(newCtx, userContent, lastAssistantContent(messages));
     if (fused) {
       newCtx = fused;
       const finalized = await tryCompleteFiscalResidenceFromContext(
@@ -105,14 +106,19 @@ export async function runLlmTurn(h: HandlerContext): Promise<string> {
     );
   }
   if (trimmed) {
+    if (newState === "fiscal_residence") {
+      const withAskedKey = syncLastAskedKeyFromAssistantText(newCtx, trimmed);
+      if (withAskedKey !== newCtx) {
+        newCtx = withAskedKey;
+        await prisma.conversationSession.update({
+          where: { id: sessionId },
+          data: { contextJson: newCtx as Prisma.InputJsonValue }
+        });
+      }
+    }
     let assistantText = trimmed;
     if (newState === "income_capture") {
       assistantText += `\n\n${await resolveIntakeRedirect("income_capture", newCtx, session.userId, session.taxYear)}`;
-    } else if (
-      newState === "fiscal_residence" &&
-      !messageAlreadyAsksQuestion(trimmed)
-    ) {
-      assistantText += `\n\n${await resolveIntakeRedirect("fiscal_residence", newCtx, session.userId, session.taxYear)}`;
     } else if (newState === "events" || newState === "monthly_calc") {
       assistantText += `\n\n${await resolveIntakeRedirect(newState, newCtx, session.userId, session.taxYear)}`;
     }
