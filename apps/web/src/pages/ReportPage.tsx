@@ -9,9 +9,8 @@ import { fetchTaxReport, taxReportQueryKey, type FullTaxReport } from "../lib/ta
 export type { FullTaxReport };
 export { fetchTaxReport, taxReportQueryKey };
 
-export function ReportPage({ reportId: reportIdProp }: { reportId?: string }) {
-  const { reportId: reportIdParam } = useParams<{ reportId: string }>();
-  const reportId = reportIdProp ?? reportIdParam;
+export function ReportPage() {
+  const { reportId } = useParams<{ reportId: string }>();
 
   const { data: report, isPending, isError, isFetching } = useQuery({
     queryKey: taxReportQueryKey(reportId ?? ""),

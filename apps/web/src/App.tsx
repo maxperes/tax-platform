@@ -1,82 +1,11 @@
-import type { ReactNode } from "react";
-import { Navigate, Route, Routes, useParams } from "react-router-dom";
-import { AuthConfigProvider, useAuthConfig } from "./auth-config";
-import { LoginPage } from "./pages/LoginPage";
-import { SignupPage } from "./pages/SignupPage";
-import { SessionsPage } from "./pages/SessionsPage";
-import { ChatPage } from "./pages/ChatPage";
-import { PrivacyPage } from "./pages/PrivacyPage";
-import { ReportPage } from "./pages/ReportPage";
-import { getToken } from "./api";
-
-function PrivateRoute({ children }: { children: ReactNode }) {
-  return getToken() ? children : <Navigate to="/login" replace />;
-}
-
-function SignupRoute() {
-  const { registrationEnabled } = useAuthConfig();
-  if (!registrationEnabled) {
-    return <Navigate to="/login" replace />;
-  }
-  return <SignupPage />;
-}
-
-function ReportRoute() {
-  const { reportId } = useParams<{ reportId: string }>();
-  if (!reportId) return <Navigate to="/sessions" replace />;
-  return <ReportPage key={reportId} reportId={reportId} />;
-}
-
-function HomeRoute() {
-  return getToken() ? <Navigate to="/sessions" replace /> : <Navigate to="/login" replace />;
-}
-
-function AppRoutes() {
-  return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/signup" element={<SignupRoute />} />
-      <Route
-        path="/sessions"
-        element={
-          <PrivateRoute>
-            <SessionsPage />
-          </PrivateRoute>
-        }
-      />
-      <Route
-        path="/chat/:sessionId"
-        element={
-          <PrivateRoute>
-            <ChatPage />
-          </PrivateRoute>
-        }
-      />
-      <Route
-        path="/report/:reportId"
-        element={
-          <PrivateRoute>
-            <ReportRoute />
-          </PrivateRoute>
-        }
-      />
-      <Route
-        path="/privacy"
-        element={
-          <PrivateRoute>
-            <PrivacyPage />
-          </PrivateRoute>
-        }
-      />
-      <Route path="/" element={<HomeRoute />} />
-    </Routes>
-  );
-}
+import { RouterProvider } from "react-router-dom";
+import { AuthConfigProvider } from "./auth-config";
+import { router } from "./router";
 
 export default function App() {
   return (
     <AuthConfigProvider>
-      <AppRoutes />
+      <RouterProvider router={router} />
     </AuthConfigProvider>
   );
 }

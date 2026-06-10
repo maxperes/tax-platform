@@ -353,12 +353,13 @@ export function ChatPage() {
     }
   }
 
-  async function prefetchReport(reportId: string) {
-    await qc.prefetchQuery({
+  function viewReport(reportId: string) {
+    void qc.prefetchQuery({
       queryKey: taxReportQueryKey(reportId),
       queryFn: () => fetchTaxReport(reportId),
       staleTime: 60_000
     });
+    nav(`/report/${reportId}`);
   }
 
   async function jumpToStep(state: string) {
@@ -729,13 +730,13 @@ export function ChatPage() {
               ))}
               {latestReportMeta && (
                 <div className="flex flex-wrap gap-2">
-                  <Link
-                    to={`/report/${latestReportMeta.id}`}
-                    onMouseEnter={() => void prefetchReport(latestReportMeta.id)}
+                  <button
+                    type="button"
+                    onClick={() => viewReport(latestReportMeta.id)}
                     className="rounded-lg border border-emerald-600/60 bg-emerald-900/40 px-3 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-900/70"
                   >
                     View report
-                  </Link>
+                  </button>
                   <button type="button" onClick={() => void downloadLatestReportJson()} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs hover:border-emerald-600">
                     Download JSON
                   </button>
@@ -754,13 +755,13 @@ export function ChatPage() {
             <div className="mt-3 rounded-lg border border-emerald-800/50 bg-emerald-950/25 px-3 py-2 text-xs text-emerald-100 space-y-2">
               {latestReportMeta ? (
                 <div className="flex flex-wrap gap-2">
-                  <Link
-                    to={`/report/${latestReportMeta.id}`}
-                    onMouseEnter={() => void prefetchReport(latestReportMeta.id)}
+                  <button
+                    type="button"
+                    onClick={() => viewReport(latestReportMeta.id)}
                     className="rounded-lg border border-emerald-600/60 bg-emerald-900/40 px-3 py-1.5 text-xs font-medium text-emerald-100"
                   >
                     View report
-                  </Link>
+                  </button>
                   <button type="button" onClick={() => void downloadLatestReportJson()} className="rounded-lg border border-emerald-600/60 px-3 py-1.5 text-xs">
                     Download JSON
                   </button>
