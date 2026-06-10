@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ActionBanner } from "../components/chat/ActionBanner";
 import { ChatInput } from "../components/chat/ChatInput";
@@ -39,7 +39,6 @@ type Session = {
 
 export function ChatPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
-  const nav = useNavigate();
   const qc = useQueryClient();
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -335,6 +334,17 @@ export function ChatPage() {
     }
   }
 
+  const headerActionClass =
+    "inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 hover:border-sky-600 no-underline";
+
+  function prefetchReport(reportId: string) {
+    void qc.prefetchQuery({
+      queryKey: taxReportQueryKey(reportId),
+      queryFn: () => fetchTaxReport(reportId),
+      staleTime: 60_000
+    });
+  }
+
   async function startOver() {
     if (!session) return;
     if (!window.confirm("Start over and create a new blank chat session?")) return;
@@ -345,7 +355,7 @@ export function ChatPage() {
         method: "POST",
         body: JSON.stringify({ taxYear: session.taxYear })
       });
-      nav(`/chat/${next.id}`);
+      window.location.assign(`/chat/${next.id}`);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Could not start a new session");
     } finally {
@@ -353,13 +363,9 @@ export function ChatPage() {
     }
   }
 
-  function viewReport(reportId: string) {
-    void qc.prefetchQuery({
-      queryKey: taxReportQueryKey(reportId),
-      queryFn: () => fetchTaxReport(reportId),
-      staleTime: 60_000
-    });
-    nav(`/report/${reportId}`);
+  function handleSignOut() {
+    signOut();
+    window.location.assign("/login");
   }
 
   async function jumpToStep(state: string) {
@@ -624,11 +630,6 @@ export function ChatPage() {
     }
   }
 
-  function handleSignOut() {
-    signOut();
-    nav("/login", { replace: true });
-  }
-
   if (isLoading || isError || !session) {
     return (
       <SessionErrorView
@@ -661,12 +662,12 @@ export function ChatPage() {
                 onToggle={() => setNoticeCenterOpen((o) => !o)}
                 containerRef={noticeCenterRef}
               />
-              <Link to="/sessions" className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 hover:border-sky-600">
+              <a href="/sessions" className={headerActionClass}>
                 Sessions
-              </Link>
-              <Link to="/privacy" className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 hover:border-sky-600">
+              </a>
+              <a href="/privacy" className={headerActionClass}>
                 Privacy
-              </Link>
+              </a>
               <button type="button" onClick={handleSignOut} className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 hover:border-sky-600">
                 Sign out
               </button>
@@ -730,13 +731,13 @@ export function ChatPage() {
               ))}
               {latestReportMeta && (
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => viewReport(latestReportMeta.id)}
-                    className="rounded-lg border border-emerald-600/60 bg-emerald-900/40 px-3 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-900/70"
+                  <a
+                    href={`/report/${latestReportMeta.id}`}
+                    onMouseEnter={() => prefetchReport(latestReportMeta.id)}
+                    className="inline-flex items-center rounded-lg border border-emerald-600/60 bg-emerald-900/40 px-3 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-900/70 no-underline"
                   >
                     View report
-                  </button>
+                  </a>
                   <button type="button" onClick={() => void downloadLatestReportJson()} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs hover:border-emerald-600">
                     Download JSON
                   </button>
@@ -755,13 +756,13 @@ export function ChatPage() {
             <div className="mt-3 rounded-lg border border-emerald-800/50 bg-emerald-950/25 px-3 py-2 text-xs text-emerald-100 space-y-2">
               {latestReportMeta ? (
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => viewReport(latestReportMeta.id)}
-                    className="rounded-lg border border-emerald-600/60 bg-emerald-900/40 px-3 py-1.5 text-xs font-medium text-emerald-100"
+                  <a
+                    href={`/report/${latestReportMeta.id}`}
+                    onMouseEnter={() => prefetchReport(latestReportMeta.id)}
+                    className="inline-flex items-center rounded-lg border border-emerald-600/60 bg-emerald-900/40 px-3 py-1.5 text-xs font-medium text-emerald-100 no-underline"
                   >
                     View report
-                  </button>
+                  </a>
                   <button type="button" onClick={() => void downloadLatestReportJson()} className="rounded-lg border border-emerald-600/60 px-3 py-1.5 text-xs">
                     Download JSON
                   </button>

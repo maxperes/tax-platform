@@ -64,6 +64,7 @@ if (webDist && fs.existsSync(webDist)) {
       next();
       return;
     }
+    res.set("Cache-Control", "no-store, private");
     res.sendFile(path.join(webDist, "index.html"));
   });
 }
