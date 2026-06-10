@@ -105,7 +105,7 @@ The login URL is public; access control comes from only provisioning accounts yo
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/auth/config` | Public auth flags (`registrationEnabled`) |
+| GET | `/api/auth/config` | Public auth flags (`registrationEnabled`, `privacyPolicyUrl`) |
 | POST | `/api/auth/register` | Register (403 when registration disabled) |
 | POST | `/api/auth/login` | Login |
 | POST | `/api/sessions` | Create conversation session |
@@ -123,7 +123,10 @@ The login URL is public; access control comes from only provisioning accounts yo
 | GET | `/api/report/latest?taxYear=` | Latest report id/title for the user and year |
 | GET | `/api/report/:id` | Fetch report JSON |
 | GET | `/api/report/:id/download` | Download report as JSON file |
+| GET | `/api/me/data-export` | Download full account data export (JSON) |
+| POST | `/api/me/delete-account` | Delete account and all data (`password`, `confirm: "DELETE"`) |
 | POST | `/api/admin/users` | Create user (`ADMIN_TOKEN` + `x-admin-token`; no user JWT) |
+| DELETE | `/api/admin/users/:id` | Delete user (`ADMIN_TOKEN` + `x-admin-token`) |
 | GET | `/api/admin/rule-overrides` | List merged rule overrides (optional `ADMIN_TOKEN` + `x-admin-token`) |
 
 ## Scripts

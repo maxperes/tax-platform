@@ -67,6 +67,13 @@ export const config = {
   webDist: process.env.WEB_DIST?.trim() || "",
   /** Public privacy policy URL shown in trust/compliance responses (optional). */
   privacyPolicyUrl: process.env.PRIVACY_POLICY_URL?.trim() || "",
+  /** Version label recorded on consent records (e.g. v1). */
+  privacyPolicyVersion: process.env.PRIVACY_POLICY_VERSION?.trim() || "v1",
+  /**
+   * When true, account deletion may be blocked when tax reports exist (legal retention).
+   * Defaults to false until legal role is confirmed.
+   */
+  legalRetentionMode: parseBoolEnv(process.env.LEGAL_RETENTION_MODE, false),
   /** OpenAI API key for hosted OpenAI, or when your local server expects Authorization. */
   openaiApiKey,
   /** OpenAI-compatible API base (Ollama, LM Studio, vLLM). Omitted env defaults to local Ollama when no API key is set. */

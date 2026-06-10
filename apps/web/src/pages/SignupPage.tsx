@@ -5,9 +5,11 @@ import { api, setToken } from "../api";
 
 export function SignupPage() {
   const nav = useNavigate();
-  const { registrationEnabled } = useAuthConfig();
+  const { registrationEnabled, privacyPolicyUrl } = useAuthConfig();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedSensitiveDataProcessing, setAcceptedSensitiveDataProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -22,7 +24,12 @@ export function SignupPage() {
     try {
       const res = await api<{ token: string }>("/api/auth/register", {
         method: "POST",
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({
+          email,
+          password,
+          acceptedTerms,
+          acceptedSensitiveDataProcessing
+        })
       });
       setToken(res.token);
       const session = await api<{ id: string }>("/api/sessions", {
@@ -64,10 +71,54 @@ export function SignupPage() {
               required
             />
           </div>
+          <label className="flex items-start gap-2 text-sm text-slate-400">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={acceptedTerms}
+              onChange={(e) => setAcceptedTerms(e.target.checked)}
+              required
+            />
+            <span>
+              I accept the terms of service
+              {privacyPolicyUrl ? (
+                <>
+                  {" "}
+                  and{" "}
+                  <a
+                    href={privacyPolicyUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-400 hover:underline"
+                  >
+                    privacy policy
+                  </a>
+                </>
+              ) : (
+                " and privacy policy"
+              )}
+              .
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm text-slate-400">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={acceptedSensitiveDataProcessing}
+              onChange={(e) => setAcceptedSensitiveDataProcessing(e.target.checked)}
+              required
+            />
+            <span>
+              I consent to processing of sensitive personal data (tax, financial, and identity
+              information) required for this service, including LLM-assisted intake when enabled.
+            </span>
+          </label>
           {error && <p className="text-sm text-red-400">{error}</p>}
           <button
             type="submit"
-            disabled={loading}
+            disabled={
+              loading || !acceptedTerms || !acceptedSensitiveDataProcessing
+            }
             className="w-full rounded-lg bg-emerald-600 hover:bg-emerald-500 py-2 font-medium disabled:opacity-50"
           >
             {loading ? "Creating…" : "Sign up"}

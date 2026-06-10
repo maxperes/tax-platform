@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/api.ts","./src/auth-config.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/pages/chatpage.tsx","./src/pages/loginpage.tsx","./src/pages/signuppage.tsx"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/api.ts","./src/auth-config.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/pages/chatpage.tsx","./src/pages/loginpage.tsx","./src/pages/privacypage.tsx","./src/pages/signuppage.tsx"],"version":"5.9.3"}

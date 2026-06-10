@@ -4,6 +4,7 @@ import { AuthConfigProvider, useAuthConfig } from "./auth-config";
 import { LoginPage } from "./pages/LoginPage";
 import { SignupPage } from "./pages/SignupPage";
 import { ChatPage } from "./pages/ChatPage";
+import { PrivacyPage } from "./pages/PrivacyPage";
 import { getToken } from "./api";
 
 function PrivateRoute({ children }: { children: ReactNode }) {
@@ -28,6 +29,14 @@ function AppRoutes() {
         element={
           <PrivateRoute>
             <ChatPage />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/privacy"
+        element={
+          <PrivateRoute>
+            <PrivacyPage />
           </PrivateRoute>
         }
       />

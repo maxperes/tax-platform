@@ -6,6 +6,11 @@ import { adminTokenRequiredMiddleware } from "../middleware/admin-token.js";
 import { config } from "../config.js";
 import { asyncHandler } from "../middleware/async-handler.js";
 import { createUser, userCredentialsSchema } from "../services/create-user.js";
+import {
+  deleteUserAccountAsAdmin,
+  DeletionBlockedError,
+  UserNotFoundError
+} from "../services/delete-user.js";
 
 export const adminRouter = Router();
 
@@ -24,6 +29,27 @@ adminRouter.post(
       res.status(201).json({ user: { id: user.id, email: user.email } });
     } catch (err) {
       if (err instanceof Error && err.name === "UserAlreadyExistsError") {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+  })
+);
+
+adminRouter.delete(
+  "/users/:id",
+  adminTokenRequiredMiddleware,
+  asyncHandler(async (req, res) => {
+    try {
+      await deleteUserAccountAsAdmin(String(req.params.id));
+      res.status(204).send();
+    } catch (err) {
+      if (err instanceof UserNotFoundError) {
+        res.status(404).json({ error: err.message });
+        return;
+      }
+      if (err instanceof DeletionBlockedError) {
         res.status(409).json({ error: err.message });
         return;
       }

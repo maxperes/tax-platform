@@ -474,7 +474,8 @@ function trustConcernCoreResponse(taxYear: number, userContent: string): string 
   }
   return (
     `Yes, we store the information you provide in this tax intake for ${taxYear} so we can prepare your assessment and keep your session progress. ` +
-    "Access should be limited to authorized service operations and support. If you need data deletion/export details, please request it and we can guide you."
+    "Access is limited to your account and authorized service operations. " +
+    "You can export or delete your data anytime from Privacy settings in the app (export my data / delete my account)."
   );
 }
 

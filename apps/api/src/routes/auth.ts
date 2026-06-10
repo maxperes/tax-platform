@@ -5,13 +5,27 @@ import { prisma } from "../db.js";
 import { signToken } from "../middleware/auth.js";
 import { config } from "../config.js";
 import { createUser, userCredentialsSchema } from "../services/create-user.js";
+import { createUserWithConsent } from "../services/consent.js";
 
 const loginSchema = userCredentialsSchema;
+
+const registerSchema = userCredentialsSchema.extend({
+  acceptedTerms: z.literal(true, {
+    errorMap: () => ({ message: "You must accept the terms and privacy policy" })
+  }),
+  acceptedSensitiveDataProcessing: z.literal(true, {
+    errorMap: () => ({ message: "You must consent to processing of sensitive tax data" })
+  })
+});
 
 export const authRouter = Router();
 
 authRouter.get("/config", (_req, res) => {
-  res.json({ registrationEnabled: config.registrationEnabled });
+  res.json({
+    registrationEnabled: config.registrationEnabled,
+    privacyPolicyUrl: config.privacyPolicyUrl || null,
+    privacyPolicyVersion: config.privacyPolicyVersion
+  });
 });
 
 authRouter.post("/register", async (req, res) => {
@@ -20,7 +34,7 @@ authRouter.post("/register", async (req, res) => {
     return;
   }
 
-  const parsed = userCredentialsSchema.safeParse(req.body);
+  const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.flatten() });
     return;
@@ -28,7 +42,9 @@ authRouter.post("/register", async (req, res) => {
 
   const { email, password } = parsed.data;
   try {
-    const user = await createUser(email, password);
+    const user = await createUserWithConsent(() => createUser(email, password), {
+      ipAddress: req.ip
+    });
     const token = signToken({ sub: user.id, email: user.email });
     res.status(201).json({ token, user: { id: user.id, email: user.email } });
   } catch (err) {

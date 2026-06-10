@@ -23,6 +23,34 @@ model User {
   monthlyCalcs         MonthlyTaxCalculation[]
   taxReports           TaxReport[]
   taxCalculations      TaxCalculation[]
+  consentRecords       ConsentRecord[]
+}
+
+model ConsentRecord {
+  id            String    @id @default(uuid())
+  userId        String
+  purpose       String
+  policyVersion String
+  grantedAt     DateTime  @default(now())
+  revokedAt     DateTime?
+  ipAddress     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, purpose])
+}
+
+model PrivacyAuditEvent {
+  id         String   @id @default(uuid())
+  userId     String?
+  eventType  String
+  occurredAt DateTime @default(now())
+  metadata   Json?
+
+  @@index([userId])
+  @@index([eventType])
+  @@index([occurredAt])
 }
 
 model RuleOverride {

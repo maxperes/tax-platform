@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 
 export type AuthConfig = {
   registrationEnabled: boolean;
+  privacyPolicyUrl: string | null;
+  privacyPolicyVersion: string;
 };
 
 const AuthConfigContext = createContext<AuthConfig | null>(null);
@@ -16,7 +18,13 @@ export function AuthConfigProvider({ children }: { children: ReactNode }) {
         return res.json() as Promise<AuthConfig>;
       })
       .then(setConfig)
-      .catch(() => setConfig({ registrationEnabled: true }));
+      .catch(() =>
+        setConfig({
+          registrationEnabled: true,
+          privacyPolicyUrl: null,
+          privacyPolicyVersion: "v1"
+        })
+      );
   }, []);
 
   if (!config) {

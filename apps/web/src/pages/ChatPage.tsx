@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, getToken } from "../api";
 
@@ -747,6 +747,12 @@ export function ChatPage() {
                 </div>
               )}
             </div>
+            <Link
+              to="/privacy"
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 hover:border-sky-600"
+            >
+              Privacy
+            </Link>
             <button
               type="button"
               onClick={() => void startOver()}
