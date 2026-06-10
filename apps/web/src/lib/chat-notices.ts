@@ -15,11 +15,17 @@ export const NOTICE_ADDITIONAL_REVIEW = {
   body: "This case is flagged for **additional review**. Say **proceed anyway** in chat to generate a preliminary report, or fix flagged items first."
 } as const;
 
+export const NOTICE_RULES_OUTDATED = {
+  id: "rules_outdated",
+  title: "Tax rules updated",
+  body: "Statutory tables or rule overrides changed since your last calculation. Re-run **monthly calc** or **regenerate report** in chat so figures match current law."
+} as const;
+
 export type SessionNotice = {
   id: string;
   title: string;
   body: string;
-  kind: "welcome" | "review";
+  kind: "welcome" | "review" | "rules";
 };
 
 export function activeSessionNotices(session: Session): SessionNotice[] {
@@ -45,6 +51,7 @@ export function activeSessionNotices(session: Session): SessionNotice[] {
 
 export const welcomeBannerStorageKey = (id: string) => `tax-platform-chat-dismiss-welcome-${id}`;
 export const reviewBannerStorageKey = (id: string) => `tax-platform-chat-dismiss-review-${id}`;
+export const rulesFreshnessBannerStorageKey = (id: string) => `tax-platform-chat-dismiss-rules-${id}`;
 export const noticeReadIdsStorageKey = (id: string) => `tax-platform-chat-notices-read-${id}`;
 
 export function loadNoticeReadIds(sessionId: string): Set<string> {

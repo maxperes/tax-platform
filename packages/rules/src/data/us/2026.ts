@@ -1,3 +1,5 @@
+import type { DataPackMeta } from "../pack-meta.js";
+
 /**
  * US federal parameters for tax year 2026 (data pack us-2026-1).
  * Brackets and standard deduction indexed from IRS 2025 Rev.Proc. / Publication 17
@@ -6,6 +8,20 @@
  */
 
 export const US_DATA_PACK_ID = "us-2026-1";
+
+/** SME governance metadata — see docs/tax-rules-governance.md */
+export const US_DATA_PACK_META: DataPackMeta = {
+  taxYear: 2026,
+  dataPackId: US_DATA_PACK_ID,
+  jurisdiction: "US",
+  sources: [
+    "https://www.irs.gov/newsroom/irs-provides-tax-inflation-adjustments-for-tax-year-2025"
+  ],
+  smeReviewRequired: true,
+  lastValidatedAt: null,
+  validatedBy: null,
+  notes: "Brackets and standard deduction indexed from IRS 2025 Rev. Proc. as working CY2026 estimate."
+};
 
 export type UsBracketSlice = { low: number; high: number; rate: number };
 

@@ -14,9 +14,11 @@ import { TriageChips } from "../components/chat/TriageChips";
 import {
   NOTICE_ADDITIONAL_REVIEW,
   NOTICE_WELCOME_BACK,
+  NOTICE_RULES_OUTDATED,
   activeSessionNotices,
   loadNoticeReadIds,
   reviewBannerStorageKey,
+  rulesFreshnessBannerStorageKey,
   saveNoticeReadIds,
   welcomeBannerStorageKey
 } from "../lib/chat-notices";
@@ -89,6 +91,7 @@ export function ChatPage() {
   const [navigatingStep, setNavigatingStep] = useState(false);
   const [hideWelcomeBanner, setHideWelcomeBanner] = useState(false);
   const [hideReviewBanner, setHideReviewBanner] = useState(false);
+  const [hideRulesBanner, setHideRulesBanner] = useState(false);
   const [noticeCenterOpen, setNoticeCenterOpen] = useState(false);
   const [readNoticeIds, setReadNoticeIds] = useState<Set<string>>(() => new Set());
   const noticeCenterRef = useRef<HTMLDivElement>(null);
@@ -150,7 +153,7 @@ export function ChatPage() {
     enabled: Boolean(sessionId && session?.state === "deductions")
   });
 
-  type LatestReportMeta = { id: string; taxYear: number; title: string; createdAt: string };
+  type LatestReportMeta = { id: string; taxYear: number; title: string; createdAt: string; ruleVersion?: string };
   const { data: latestReportMeta } = useQuery({
     queryKey: ["taxReportLatest", sessionId, session?.taxYear],
     queryFn: async (): Promise<LatestReportMeta | null> => {
@@ -164,6 +167,20 @@ export function ChatPage() {
     },
     enabled: Boolean(sessionId && session && (session.state === "complete" || session.state === "report")),
     staleTime: 15_000
+  });
+
+  type RulesFreshness = {
+    isRulesOutdated: boolean;
+    currentRuleVersion: string;
+    outdatedSources: string[];
+  };
+  const { data: rulesFreshness } = useQuery({
+    queryKey: ["rulesFreshness", sessionId, session?.taxYear],
+    queryFn: async (): Promise<RulesFreshness> => {
+      return api<RulesFreshness>(`/api/tax-rules/freshness?taxYear=${session!.taxYear}`);
+    },
+    enabled: Boolean(sessionId && session?.taxYear),
+    staleTime: 30_000
   });
 
   const { data: fullReport } = useQuery({
@@ -210,6 +227,7 @@ export function ChatPage() {
     if (sessionId) {
       setHideWelcomeBanner(localStorage.getItem(welcomeBannerStorageKey(sessionId)) === "1");
       setHideReviewBanner(localStorage.getItem(reviewBannerStorageKey(sessionId)) === "1");
+      setHideRulesBanner(localStorage.getItem(rulesFreshnessBannerStorageKey(sessionId)) === "1");
       setReadNoticeIds(loadNoticeReadIds(sessionId));
     }
   }, [sessionId]);
@@ -697,6 +715,28 @@ export function ChatPage() {
             <div className="mt-3 rounded-lg border border-amber-700/50 bg-amber-950/40 px-3 py-2 text-sm text-amber-100 flex gap-3 items-start justify-between" role="status">
               <p className="min-w-0 flex-1">{renderChatEmphasis(NOTICE_ADDITIONAL_REVIEW.body)}</p>
               <button type="button" onClick={() => { if (sessionId) localStorage.setItem(reviewBannerStorageKey(sessionId), "1"); setHideReviewBanner(true); }} className="shrink-0 rounded border border-amber-700/60 px-2 py-0.5 text-[11px]">
+                Hide
+              </button>
+            </div>
+          )}
+          {rulesFreshness?.isRulesOutdated && !hideRulesBanner && (
+            <div className="mt-3 rounded-lg border border-amber-700/50 bg-amber-950/40 px-3 py-2 text-sm text-amber-100 flex gap-3 items-start justify-between" role="alert">
+              <p className="min-w-0 flex-1">
+                {renderChatEmphasis(NOTICE_RULES_OUTDATED.body)}
+                {rulesFreshness.outdatedSources.length > 0 && (
+                  <span className="block mt-1 text-xs text-amber-200/80">
+                    Affected: {rulesFreshness.outdatedSources.join(", ")} · current rules: {rulesFreshness.currentRuleVersion}
+                  </span>
+                )}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  if (sessionId) localStorage.setItem(rulesFreshnessBannerStorageKey(sessionId), "1");
+                  setHideRulesBanner(true);
+                }}
+                className="shrink-0 rounded border border-amber-700/60 px-2 py-0.5 text-[11px]"
+              >
                 Hide
               </button>
             </div>

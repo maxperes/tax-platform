@@ -53,7 +53,7 @@ Database schema lives in [apps/api/prisma/schema.prisma](apps/api/prisma/schema.
 ## Tax calculation engine (BR + US, 2026)
 
 - **Where the math lives:** deterministic code in [`packages/rules`](packages/rules) — data tables in `src/data/br/2026.ts` and `src/data/us/2026.ts`, engines in `src/engines/`. The LLM does **not** compute taxes.
-- **Versioning:** `ENGINE_VERSION` is **1.0.0** in [`packages/shared/src/constants.ts`](packages/shared/src/constants.ts). Persisted on all calculations and reports via `ruleVersion` / `dataPackVersion`.
+- **Versioning:** `ENGINE_VERSION` is **1.1.0** in [`packages/shared/src/constants.ts`](packages/shared/src/constants.ts). Persisted on all calculations and reports via `ruleVersion` / `dataPackVersion`. See [docs/tax-rules-governance.md](docs/tax-rules-governance.md) for SME review and release process.
 - **Fiscal profile routing:** `resident_brazil` / `non_resident_brazil` / `undetermined` → BR estimates + Carnê-Leão monthly; `resident_usa` → US annual estimate; `dual_residence` → both (flagged for review).
 - **US capital gains:** 0/15/20% by holding period (long-term ≥ 365 days). Short-term flagged for review.
 - **Exemptions & deductions:** applied in annual and monthly Carnê-Leão paths.
@@ -119,6 +119,11 @@ pnpm --filter @tax-platform/api create-user -- email@example.com 'secure-passwor
 | GET | `/api/me/data-export` | Full account data export |
 | POST | `/api/me/delete-account` | Delete account |
 | POST | `/api/admin/users` | Create user (admin token) |
+| GET | `/api/tax-rules/freshness?taxYear=` | Compare stored calculations to active rule stamp |
+| POST | `/api/admin/rule-overrides` | Upsert rule override (admin token) |
+| PATCH | `/api/admin/rule-overrides/:id` | Update override value |
+| DELETE | `/api/admin/rule-overrides/:id` | Remove override |
+| POST | `/api/admin/rules/recompute-sessions` | Bulk recompute open sessions for tax year |
 | GET | `/api/admin/rule-overrides` | List rule overrides |
 
 ## Scripts

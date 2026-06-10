@@ -42,7 +42,7 @@ O cálculo tributário é **determinístico** no pacote `packages/rules` (tabela
 - **Versionamento:** constantes `ENGINE_VERSION` e pacotes de dados `DATA_PACK_BR_2026` / `DATA_PACK_US_2026` em `@tax-platform/shared`; carimbo completo `buildRuleVersionStamp()` gravado em `ruleVersion`, `dataPackVersion` e `jurisdiction` nas entidades Prisma (`TaxCalculation`, `MonthlyTaxCalculation`, `CapitalGainCalculation`, `TaxReport`).
 - **Perfil fiscal:** residente EUA usa estimativa anual US; residente Brasil (e não residente / indeterminado) usa IRPF progressivo BR + Carnê-Leão mensal; **dual** gera estimativas BR e US e mantém revisão adicional.
 - **Câmbio:** `packages/rules/src/fx.ts` — ausência de taxa para moeda estrangeira marca `requiresAdditionalReview` em vez de assumir câmbio 1:1 silenciosamente.
-- **Atualização entre releases:** tabela `RuleOverride` (Postgres); mesclagem em tempo de cálculo. Listagem: `GET /api/admin/rule-overrides` (opcional `ADMIN_TOKEN` + cabeçalho `x-admin-token`).
+- **Atualização entre releases:** tabela `RuleOverride` (Postgres); mesclagem em tempo de cálculo. Admin: `GET/POST/PATCH/DELETE /api/admin/rule-overrides`, bulk recompute `POST /api/admin/rules/recompute-sessions`. Freshness: `GET /api/tax-rules/freshness?taxYear=`. Processo completo: [docs/tax-rules-governance.md](docs/tax-rules-governance.md).
 
 Sempre validar alíquotas e faixas com **especialista fiscal** antes de uso em produção.
 

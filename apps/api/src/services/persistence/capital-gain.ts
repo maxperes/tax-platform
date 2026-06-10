@@ -1,11 +1,12 @@
 import {
   computeCapitalGain,
   buildUsAnnualEstimate,
-  getUsRulePack,
+  getUsRulePackForYear,
+  resolveBrDataPackId,
+  resolveUsDataPackId,
   includesInOrdinaryAnnual,
   resolveUsdFromIncome
 } from "@tax-platform/rules";
-import { DATA_PACK_BR_2026, DATA_PACK_US_2026 } from "@tax-platform/shared";
 import type { CapitalGainCalculationInput } from "@tax-platform/shared";
 import type { CapitalGainCalculation } from "@prisma/client";
 import { buildStampWithOverrides, loadRulePatches } from "../rule-overrides.js";
@@ -61,7 +62,7 @@ export async function createCapitalGainCalculation(
     const exemptionsUsd = exemptionRows
       .filter((e) => e.applicationScope === "annual" && e.currency === "USD")
       .reduce((s, e) => s + e.amount.toNumber(), 0);
-    const usPack = getUsRulePack(patches);
+    const usPack = getUsRulePackForYear(taxYear, patches);
     const est = buildUsAnnualEstimate({
       taxYear,
       grossIncomeUsd: grossUsd,
@@ -75,7 +76,7 @@ export async function createCapitalGainCalculation(
   }
 
   const result = computeCapitalGain(input, jurisdiction, { ordinaryTaxableIncomeUsd });
-  const dataPack = jurisdiction === "US" ? DATA_PACK_US_2026 : DATA_PACK_BR_2026;
+  const dataPack = jurisdiction === "US" ? resolveUsDataPackId(taxYear) : resolveBrDataPackId(taxYear);
   const ruleVersion = buildStampWithOverrides(dataPack, patches);
   const row = await prisma.capitalGainCalculation.create({
     data: {

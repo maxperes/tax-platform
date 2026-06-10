@@ -1,6 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { downloadAuthenticated, getToken } from "../api";
+import { api, downloadAuthenticated, getToken } from "../api";
 import { LoadingShell } from "../components/LoadingShell";
 import { formatCalcStatus } from "../lib/chat-constants";
 import { formatMoney } from "../lib/chat-utils";
@@ -12,6 +12,7 @@ type FullTaxReport = {
   createdAt: string;
   requiresAdditionalReview: boolean;
   isStale?: boolean;
+  ruleVersion?: string;
   sections?: Array<{ title: string; bodyMarkdown?: string | null; items?: Array<{ label: string; valueJson: unknown }> }>;
   summaryJson: {
     fiscalProfile?: string;
@@ -48,6 +49,15 @@ export function ReportPage() {
       return (await res.json()) as FullTaxReport;
     },
     enabled: Boolean(reportId)
+  });
+
+  const { data: rulesFreshness } = useQuery({
+    queryKey: ["rulesFreshness", report?.taxYear],
+    queryFn: async () =>
+      api<{ isRulesOutdated: boolean; currentRuleVersion: string }>(
+        `/api/tax-rules/freshness?taxYear=${report!.taxYear}`
+      ),
+    enabled: Boolean(report?.taxYear)
   });
 
   if (isLoading) return <LoadingShell message="Loading report…" />;
@@ -98,6 +108,12 @@ export function ReportPage() {
           {report.isStale && (
             <p className="mt-3 text-sm text-amber-200 rounded-lg border border-amber-800/50 bg-amber-950/30 px-3 py-2">
               This report may be stale — underlying data changed after generation. Regenerate from chat.
+            </p>
+          )}
+          {rulesFreshness?.isRulesOutdated && (
+            <p className="mt-3 text-sm text-amber-200 rounded-lg border border-amber-800/50 bg-amber-950/30 px-3 py-2">
+              Tax rules changed since this report was generated ({report.ruleVersion ?? "unknown stamp"} →{" "}
+              {rulesFreshness.currentRuleVersion}). Regenerate from chat to refresh calculations.
             </p>
           )}
           {report.requiresAdditionalReview && (

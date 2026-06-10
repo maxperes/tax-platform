@@ -1,4 +1,5 @@
 import type { ProgressiveRow } from "../../progressive.js";
+import type { DataPackMeta } from "../pack-meta.js";
 
 /**
  * BR statutory tables for tax year 2026 (data pack br-2026-1).
@@ -7,6 +8,20 @@ import type { ProgressiveRow } from "../../progressive.js";
  * @see https://www.gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda (tabela progressiva mensal)
  */
 export const BR_DATA_PACK_ID = "br-2026-1";
+
+/** SME governance metadata — see docs/tax-rules-governance.md */
+export const BR_DATA_PACK_META: DataPackMeta = {
+  taxYear: 2026,
+  dataPackId: BR_DATA_PACK_ID,
+  jurisdiction: "BR",
+  sources: [
+    "https://www.gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda"
+  ],
+  smeReviewRequired: true,
+  lastValidatedAt: null,
+  validatedBy: null,
+  notes: "Monthly/annual tables use RFB 2024-style values until CY2026 tables are published."
+};
 
 /** IRPF-style monthly progressive (same structure as Carnê-Leão monthly base). */
 export const BR_IRPF_MONTHLY_2026: ProgressiveRow[] = [

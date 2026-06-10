@@ -11,8 +11,37 @@ import {
   DeletionBlockedError,
   UserNotFoundError
 } from "../services/delete-user.js";
+import {
+  isAllowedRuleOverrideKey,
+  loadRulePatches,
+  RULE_OVERRIDE_KEYS
+} from "../services/rule-overrides.js";
+import {
+  estimateAnnualTax,
+  recomputeMonthlyTax,
+  syncTaxableEvents
+} from "../services/tax-pipeline.js";
 
 export const adminRouter = Router();
+
+function requireAdminToken(req: { header: (name: string) => string | undefined }, res: { status: (n: number) => { json: (b: unknown) => void } }): boolean {
+  if (!config.adminToken) return true;
+  const token = req.header("x-admin-token");
+  if (token !== config.adminToken) {
+    res.status(403).json({ error: "Forbidden" });
+    return false;
+  }
+  return true;
+}
+
+const jurisdictionSchema = z.enum(["BR", "US"]);
+
+const ruleOverrideBodySchema = z.object({
+  jurisdiction: jurisdictionSchema,
+  taxYear: z.number().int(),
+  key: z.string().min(1),
+  valueJson: z.unknown()
+});
 
 adminRouter.post(
   "/users",
@@ -60,17 +89,11 @@ adminRouter.delete(
 
 adminRouter.use(authMiddleware);
 
-/** Read-only list of rule overrides merged at calculation time (see `RuleOverride` model). */
+/** List rule overrides merged at calculation time. */
 adminRouter.get("/rule-overrides", asyncHandler(async (req, res) => {
-  if (config.adminToken) {
-    const token = req.header("x-admin-token");
-    if (token !== config.adminToken) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-  }
+  if (!requireAdminToken(req, res)) return;
   const taxYear = z.coerce.number().optional().parse(req.query.taxYear);
-  const jurisdiction = z.string().optional().parse(req.query.jurisdiction);
+  const jurisdiction = jurisdictionSchema.optional().parse(req.query.jurisdiction);
   const rows = await prisma.ruleOverride.findMany({
     where: {
       ...(taxYear !== undefined ? { taxYear } : {}),
@@ -78,5 +101,97 @@ adminRouter.get("/rule-overrides", asyncHandler(async (req, res) => {
     },
     orderBy: [{ taxYear: "desc" }, { jurisdiction: "asc" }, { key: "asc" }]
   });
-  res.json(rows);
+  res.json({ keys: RULE_OVERRIDE_KEYS, overrides: rows });
 }));
+
+adminRouter.post(
+  "/rule-overrides",
+  adminTokenRequiredMiddleware,
+  asyncHandler(async (req, res) => {
+    const body = ruleOverrideBodySchema.parse(req.body);
+    if (!isAllowedRuleOverrideKey(body.jurisdiction, body.key)) {
+      res.status(400).json({
+        error: "Invalid override key for jurisdiction",
+        allowedKeys: RULE_OVERRIDE_KEYS[body.jurisdiction]
+      });
+      return;
+    }
+    const row = await prisma.ruleOverride.upsert({
+      where: {
+        jurisdiction_taxYear_key: {
+          jurisdiction: body.jurisdiction,
+          taxYear: body.taxYear,
+          key: body.key
+        }
+      },
+      create: {
+        jurisdiction: body.jurisdiction,
+        taxYear: body.taxYear,
+        key: body.key,
+        valueJson: body.valueJson as object
+      },
+      update: { valueJson: body.valueJson as object }
+    });
+    res.status(201).json(row);
+  })
+);
+
+adminRouter.patch(
+  "/rule-overrides/:id",
+  adminTokenRequiredMiddleware,
+  asyncHandler(async (req, res) => {
+    const valueJson = z.object({ valueJson: z.unknown() }).parse(req.body).valueJson;
+    const existing = await prisma.ruleOverride.findUnique({ where: { id: String(req.params.id) } });
+    if (!existing) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    const row = await prisma.ruleOverride.update({
+      where: { id: existing.id },
+      data: { valueJson: valueJson as object }
+    });
+    res.json(row);
+  })
+);
+
+adminRouter.delete(
+  "/rule-overrides/:id",
+  adminTokenRequiredMiddleware,
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.ruleOverride.findUnique({ where: { id: String(req.params.id) } });
+    if (!existing) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    await prisma.ruleOverride.delete({ where: { id: existing.id } });
+    res.status(204).send();
+  })
+);
+
+/** Recompute tax pipeline for every user with a session in the given tax year. */
+adminRouter.post(
+  "/rules/recompute-sessions",
+  adminTokenRequiredMiddleware,
+  asyncHandler(async (req, res) => {
+    const { taxYear } = z.object({ taxYear: z.number().int() }).parse(req.body);
+    const sessions = await prisma.conversationSession.findMany({
+      where: { taxYear },
+      select: { userId: true },
+      distinct: ["userId"]
+    });
+    let recomputed = 0;
+    for (const { userId } of sessions) {
+      await syncTaxableEvents(userId, taxYear);
+      await recomputeMonthlyTax(userId, taxYear);
+      await estimateAnnualTax(userId, taxYear);
+      recomputed += 1;
+    }
+    const brPatches = await loadRulePatches("BR", taxYear);
+    const usPatches = await loadRulePatches("US", taxYear);
+    res.json({
+      taxYear,
+      usersRecomputed: recomputed,
+      overrideCounts: { BR: brPatches.length, US: usPatches.length }
+    });
+  })
+);

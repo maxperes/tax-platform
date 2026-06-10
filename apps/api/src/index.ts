@@ -18,6 +18,7 @@ import { entitySimulationsRouter } from "./routes/entity-simulations.js";
 import { exemptionsRouter } from "./routes/exemptions.js";
 import { dataChangesRouter } from "./routes/data-changes.js";
 import { taxOpsRouter } from "./routes/tax-ops.js";
+import { taxRulesRouter } from "./routes/tax-rules.js";
 import { meRouter } from "./routes/me.js";
 import { adminRouter } from "./routes/admin.js";
 
@@ -42,6 +43,7 @@ app.use("/api/trusts", trustsRouter);
 app.use("/api/entity-simulations", entitySimulationsRouter);
 app.use("/api/exemptions", exemptionsRouter);
 app.use("/api/data-changes", dataChangesRouter);
+app.use("/api/tax-rules", taxRulesRouter);
 app.use("/api", taxOpsRouter);
 app.use("/api/admin", adminRouter);
 

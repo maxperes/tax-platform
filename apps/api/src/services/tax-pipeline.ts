@@ -1,8 +1,6 @@
 import {
   incomeSourceSchema,
   type FiscalProfile,
-  DATA_PACK_BR_2026,
-  DATA_PACK_US_2026,
   assetSchema,
   internationalTransferSchema,
   trustStructureSchema,
@@ -17,8 +15,8 @@ import {
   assessInternationalTransfer,
   assessTrustStructure,
   jurisdictionsForProfile,
-  getBrRulePack,
-  getUsRulePack,
+  getBrRulePackForYear,
+  getUsRulePackForYear,
   buildBrAnnualEstimate,
   buildUsAnnualEstimate,
   aggregateMonthlyCarnetLeao,
@@ -36,7 +34,7 @@ import {
 } from "@tax-platform/rules";
 import type { Prisma, TaxCalculation } from "@prisma/client";
 import { prisma } from "../db.js";
-import { buildStampWithOverrides, loadRulePatches } from "./rule-overrides.js";
+import { buildStampWithOverrides, buildRuleVersionForJurisdictions, loadRulePatches } from "./rule-overrides.js";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
@@ -179,7 +177,7 @@ export async function recomputeMonthlyTax(
   }
 
   const brPatches = await loadRulePatches("BR", taxYear);
-  const brPack = getBrRulePack(brPatches);
+  const brPack = getBrRulePackForYear(taxYear, brPatches);
   const ruleStamp = buildStampWithOverrides(brPack.dataPackId, brPatches);
 
   const [incomes, deductionRows, exemptionRows] = await Promise.all([
@@ -378,17 +376,12 @@ export async function getLatestTaxCalculationSnapshot(
 }
 
 function buildReportRuleVersion(
+  taxYear: number,
   jurs: ReturnType<typeof jurisdictionsForProfile>,
   brPatches: { key: string; value: unknown }[],
   usPatches: { key: string; value: unknown }[]
 ): string {
-  if (jurs.includes("BR") && jurs.includes("US")) {
-    return `${buildStampWithOverrides(DATA_PACK_BR_2026, brPatches)}+${buildStampWithOverrides(DATA_PACK_US_2026, usPatches)}`;
-  }
-  if (jurs.includes("US")) {
-    return buildStampWithOverrides(DATA_PACK_US_2026, usPatches);
-  }
-  return buildStampWithOverrides(DATA_PACK_BR_2026, brPatches);
+  return buildRuleVersionForJurisdictions(taxYear, jurs, brPatches, usPatches);
 }
 
 export type UsFilingInputsForEstimate = {
@@ -436,8 +429,8 @@ export async function estimateAnnualTax(
   const jurs = jurisdictionsForProfile(profile);
   const brPatches = await loadRulePatches("BR", taxYear);
   const usPatches = await loadRulePatches("US", taxYear);
-  const brPack = getBrRulePack(brPatches);
-  const usPack = getUsRulePack(usPatches);
+  const brPack = getBrRulePackForYear(taxYear, brPatches);
+  const usPack = getUsRulePackForYear(taxYear, usPatches);
 
   for (const jurisdiction of jurs) {
     if (jurisdiction === "BR") {
@@ -662,7 +655,7 @@ export async function buildAndSaveReport(userId: string, taxYear: number): Promi
     const jurs = jurisdictionsForProfile(prof);
     const brPatches = await loadRulePatches("BR", taxYear);
     const usPatches = await loadRulePatches("US", taxYear);
-    const reportRuleVersion = buildReportRuleVersion(jurs, brPatches, usPatches);
+    const reportRuleVersion = buildReportRuleVersion(taxYear, jurs, brPatches, usPatches);
     const reportJurisdiction = jurs.includes("BR") && jurs.includes("US") ? "BR+US" : jurs.includes("US") ? "US" : "BR";
 
     const annualTaxEstimates = await getLatestTaxCalculationSnapshot(userId, taxYear, tx);

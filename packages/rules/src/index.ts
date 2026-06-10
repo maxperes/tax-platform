@@ -18,5 +18,15 @@ export * from "./carne-leao-allocation.js";
 export * from "./progressive.js";
 export * from "./merge-rule-data.js";
 export * from "./engines/index.js";
-export { brRulePack2026, BR_DATA_PACK_ID } from "./data/br/2026.js";
-export { usRulePack2026, US_DATA_PACK_ID } from "./data/us/2026.js";
+export { brRulePack2026, BR_DATA_PACK_ID, BR_DATA_PACK_META } from "./data/br/2026.js";
+export { usRulePack2026, US_DATA_PACK_ID, US_DATA_PACK_META } from "./data/us/2026.js";
+export type { DataPackMeta } from "./data/pack-meta.js";
+export {
+  getBrRulePackForYear,
+  getUsRulePackForYear,
+  isTaxYearSupported,
+  resolvePackTaxYear,
+  resolveBrDataPackId,
+  resolveUsDataPackId,
+  SUPPORTED_TAX_YEARS
+} from "./data/registry.js";
