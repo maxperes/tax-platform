@@ -479,6 +479,24 @@ function trustConcernCoreResponse(taxYear: number, userContent: string): string 
   );
 }
 
+function messageAlreadyAsksQuestion(text: string): boolean {
+  if (text.includes("?")) return true;
+  const lower = text.toLowerCase();
+  return (
+    /\bplease provide\b/.test(lower) ||
+    /\bwhat is your\b/.test(lower) ||
+    /\bwhen were you born\b/.test(lower) ||
+    /\btell me your\b/.test(lower) ||
+    /\bshare your\b/.test(lower)
+  );
+}
+
+function hadFiscalResidenceToolCall(toolCalls: OpenAI.Chat.ChatCompletionMessageToolCall[]): boolean {
+  return toolCalls.some(
+    (c) => c.type === "function" && c.function.name === "submit_fiscal_residence"
+  );
+}
+
 function intakeRedirectForState(state: ConversationState, context: Record<string, unknown>): string {
   if (state === "fiscal_residence") {
     if (isFiscalProfileConfirmPending(context)) {
@@ -617,7 +635,7 @@ async function postToolCallAssistantText(
           : await resolveIntakeRedirect("income_capture", context, userId, taxYear);
       return `${thanks}Your fiscal profile for **${taxYear}** is saved as **${profile.profile}**.${review}\n\n${planNote}\n\n${tail}`;
     }
-    return `Your fiscal profile for **${taxYear}** is saved.\n\n${await resolveIntakeRedirect(newState, context, userId, taxYear)}`;
+    return `Your progress on the fiscal profile for **${taxYear}** is saved.\n\n${await resolveIntakeRedirect(newState, context, userId, taxYear)}`;
   }
   if (newState !== prevState) {
     const stepLabel = newState.replace(/_/g, " ");
@@ -1563,11 +1581,26 @@ export async function handleUserMessage(sessionId: string, userContent: string):
       }
     }
     const trimmed = content?.trim() ?? "";
-    if (trimmed) {
+    const fiscalToolUsed = hadFiscalResidenceToolCall(toolCalls);
+    if (
+      fiscalToolUsed &&
+      (prevState === "fiscal_residence" || newState === "fiscal_residence")
+    ) {
+      assistantText = await postToolCallAssistantText(
+        session.userId,
+        prevState,
+        newState,
+        session.taxYear,
+        newCtx
+      );
+    } else if (trimmed) {
       assistantText = trimmed;
       if (newState === "income_capture") {
         assistantText += `\n\n${await resolveIntakeRedirect("income_capture", newCtx, session.userId, session.taxYear)}`;
-      } else if (newState === "fiscal_residence") {
+      } else if (
+        newState === "fiscal_residence" &&
+        !messageAlreadyAsksQuestion(trimmed)
+      ) {
         assistantText += `\n\n${await resolveIntakeRedirect("fiscal_residence", newCtx, session.userId, session.taxYear)}`;
       } else if (newState === "events" || newState === "monthly_calc") {
         assistantText += `\n\n${await resolveIntakeRedirect(newState, newCtx, session.userId, session.taxYear)}`;
