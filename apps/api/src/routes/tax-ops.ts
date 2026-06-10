@@ -80,7 +80,8 @@ taxOpsRouter.get(
   "/report/:id",
   asyncHandler(async (req, res) => {
     const report = await prisma.taxReport.findFirst({
-      where: { id: String(req.params.id), userId: req.user!.sub }
+      where: { id: String(req.params.id), userId: req.user!.sub },
+      include: { sections: { include: { items: true }, orderBy: { sortOrder: "asc" } } }
     });
     if (!report) {
       res.status(404).json({ error: "Not found" });
@@ -89,6 +90,35 @@ taxOpsRouter.get(
     res.json(report);
   })
 );
+
+taxOpsRouter.get(
+  "/report/:id/download.html",
+  asyncHandler(async (req, res) => {
+    const report = await prisma.taxReport.findFirst({
+      where: { id: String(req.params.id), userId: req.user!.sub },
+      include: { sections: { include: { items: true }, orderBy: { sortOrder: "asc" } } }
+    });
+    if (!report) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    const summary = report.summaryJson as Record<string, unknown>;
+    const sectionsHtml = report.sections
+      .map(
+        (s) =>
+          `<section><h2>${escapeHtml(s.title)}</h2>${s.bodyMarkdown ? `<p>${escapeHtml(s.bodyMarkdown)}</p>` : ""}${s.items.map((it) => `<p><strong>${escapeHtml(it.label)}</strong>: ${escapeHtml(JSON.stringify(it.valueJson))}</p>`).join("")}</section>`
+      )
+      .join("");
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(report.title)}</title><style>body{font-family:system-ui,sans-serif;max-width:800px;margin:2rem auto;padding:0 1rem}h1,h2{color:#111}section{margin:1.5rem 0;border-top:1px solid #ddd;padding-top:1rem}@media print{body{margin:0}}</style></head><body><h1>${escapeHtml(report.title)}</h1><p>Tax year ${report.taxYear} · Generated ${report.createdAt.toISOString()}</p>${report.requiresAdditionalReview ? "<p><strong>Requires additional expert review.</strong></p>" : ""}${sectionsHtml}<p><em>${escapeHtml(String(summary.estimatesDisclaimer ?? ""))}</em></p></body></html>`;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="tax-report-${report.taxYear}.html"`);
+    res.send(html);
+  })
+);
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
 
 taxOpsRouter.get(
   "/report/:id/download",

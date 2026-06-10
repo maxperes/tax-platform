@@ -41,11 +41,16 @@ export async function handleFiscalConfirm(h: HandlerContext): Promise<HandlerRes
       });
       assistantText = `The saved profile could not be read anymore. Let's re-enter your details.\n\n${firstFiscalFieldPrompt()}`;
     } else {
+      const confirmedCtx = {
+        ...h.ctx,
+        intakeGoal: h.ctx.intakeGoal ?? "full_annual",
+        _triagePending: false
+      };
       const result = await completeFiscalProfileAndDetermineNext(
         h.session.userId,
         h.session.taxYear,
         parsed.data,
-        { ...h.ctx, intakeGoal: h.ctx.intakeGoal }
+        confirmedCtx
       );
       await prisma.conversationSession.update({
         where: { id: h.sessionId },

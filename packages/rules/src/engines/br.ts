@@ -1,8 +1,10 @@
 import { buildRuleVersionStamp, type TaxCalculationInput } from "@tax-platform/shared";
 import type { CapitalGainCalculationInput } from "@tax-platform/shared";
-import type { MonthlyTaxCalculationItem } from "@tax-platform/shared";
 import { brRulePack2026, type BrRulePack2026 } from "../data/br/2026.js";
 import { effectiveRate, taxFromProgressiveTable } from "../progressive.js";
+import { normalizeCapitalGainAmounts } from "../fx.js";
+import { computeForeignTaxCredit } from "../foreign-tax-credit.js";
+import type { CarnetLeaoItem } from "../monthly-carne-leao.js";
 
 export type CapitalGainResult = {
   gain: number;
@@ -28,11 +30,25 @@ export function computeCapitalGainBr(
   input: CapitalGainCalculationInput,
   pack: BrRulePack2026 = brRulePack2026
 ): CapitalGainResult {
-  const costBasis = input.acquisitionValue * (input.ownershipPercentageSold / 100);
-  const proceeds = input.saleValue * (input.ownershipPercentageSold / 100);
+  const normalized = normalizeCapitalGainAmounts({
+    acquisitionValue: input.acquisitionValue,
+    acquisitionCurrency: input.acquisitionCurrency,
+    saleValue: input.saleValue,
+    saleCurrency: input.saleCurrency,
+    targetCurrency: "BRL",
+    exchangeRateAcquisition: input.exchangeRateAcquisition,
+    exchangeRateSale: input.exchangeRateSale,
+    acquisitionDate: input.acquisitionDate,
+    saleDate: input.saleDate
+  });
+  const costBasis = normalized.acquisitionValue * (input.ownershipPercentageSold / 100);
+  const proceeds = normalized.saleValue * (input.ownershipPercentageSold / 100);
   const gain = Math.max(0, proceeds - costBasis - input.deductibleExpenses);
   const { tax, effective } = graduatedCapitalGainTax(gain, pack);
-  const complex = input.assetType.toLowerCase().includes("trust") || input.assetCountry !== "BR";
+  const complex =
+    normalized.requiresReview ||
+    input.assetType.toLowerCase().includes("trust") ||
+    input.assetCountry !== "BR";
   return {
     gain,
     taxEstimate: tax,
@@ -50,9 +66,25 @@ export function computeCarneLeaoMonthlyAggregate(pack: BrRulePack2026, monthlyTa
   return { grossTax, appliedRate: effectiveRate(grossTax, monthlyTaxableBrl) };
 }
 
-/** Per-income line tax for Carnê-Leão (progressive on line base — MVP: same table as monthly slice). */
-export function computeCarneLeaoLineTax(lineBrl: number, pack: BrRulePack2026): number {
+/** Tax on Carnê-Leão line: Lei 14.754 flat rate or progressive monthly table. */
+export function computeCarneLeaoLineTax(
+  lineBrl: number,
+  pack: BrRulePack2026,
+  lei14754Eligible = false
+): number {
+  if (lei14754Eligible) return lineBrl * pack.lei14754Rate;
   return taxFromProgressiveTable(lineBrl, pack.monthly);
+}
+
+/** @deprecated Prefer monthly aggregate via aggregateMonthlyCarnetLeao. */
+export function applyCarneLeaoTaxToItems(
+  items: CarnetLeaoItem[],
+  pack: BrRulePack2026
+): CarnetLeaoItem[] {
+  return items.map((it) => ({
+    ...it,
+    calculatedTax: computeCarneLeaoLineTax(it.taxableAmount, pack, it.lei14754Eligible)
+  }));
 }
 
 export function buildBrAnnualEstimate(input: {
@@ -68,7 +100,7 @@ export function buildBrAnnualEstimate(input: {
   const taxableBase = Math.max(0, input.grossIncomeBrl - input.deductionsTotalBrl - input.exemptionsTotalBrl);
   const grossTax = taxFromProgressiveTable(taxableBase, pack.annual);
   const foreign = input.foreignTaxPaidBrl ?? 0;
-  const taxCreditApplied = Math.min(foreign, grossTax);
+  const taxCreditApplied = computeForeignTaxCredit(foreign, grossTax);
   const netTaxDue = Math.max(0, grossTax - taxCreditApplied);
   const appliedRate = effectiveRate(grossTax, taxableBase);
   return {
@@ -90,12 +122,4 @@ export function buildBrAnnualEstimate(input: {
     jurisdiction: "BR",
     dataPackVersion: pack.dataPackId
   };
-}
-
-/** Attach per-line calculated tax for monthly items (Carnê-Leão progressive per line — conservative MVP). */
-export function applyCarneLeaoTaxToItems(items: MonthlyTaxCalculationItem[], pack: BrRulePack2026): MonthlyTaxCalculationItem[] {
-  return items.map((it) => ({
-    ...it,
-    calculatedTax: computeCarneLeaoLineTax(it.taxableAmount, pack)
-  }));
 }

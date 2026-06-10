@@ -3,12 +3,17 @@ import { prisma } from "../../../db.js";
 import {
   formatMonthlyTaxForRecap,
   isCapitalGainSkipIntent,
+  isDomainStepSkipIntent,
   isEventsConfirmIntent,
   isMonthlyCalcConfirmIntent,
   loadIntakeModulePlan,
   nextStateAfterCapitalGain,
   nextStateAfterDeductions,
-  nextStateAfterEvents
+  nextStateAfterEntitySimulation,
+  nextStateAfterEvents,
+  nextStateAfterPatrimony,
+  nextStateAfterTransfers,
+  nextStateAfterTrustRegistry
 } from "../../intake-helpers.js";
 import {
   isDeductionsSkipIntent,
@@ -46,7 +51,24 @@ export async function handleStepAdvance(h: HandlerContext): Promise<HandlerResul
     });
     return {
       assistantText:
-        `Noted — **no capital gains** this year.\n\n` + intakeRedirectForState("deductions", h.ctx)
+        `Noted — **no capital gains** this year.\n\n` + intakeRedirectForState(next, h.ctx)
+    };
+  }
+
+  const domainSkipStates = ["patrimony", "transfers", "trust_registry", "entity_simulation"] as const;
+  if ((domainSkipStates as readonly string[]).includes(state) && isDomainStepSkipIntent(h.userContent)) {
+    const plan = await loadIntakeModulePlan(h.session.userId, h.session.taxYear, h.ctx);
+    let next: ConversationState = "deductions";
+    if (state === "patrimony") next = nextStateAfterPatrimony(plan);
+    else if (state === "transfers") next = nextStateAfterTransfers(plan);
+    else if (state === "trust_registry") next = nextStateAfterTrustRegistry(plan);
+    else if (state === "entity_simulation") next = nextStateAfterEntitySimulation(plan);
+    await prisma.conversationSession.update({
+      where: { id: h.sessionId },
+      data: { state: next }
+    });
+    return {
+      assistantText: `Noted — skipping this step.\n\n` + intakeRedirectForState(next, h.ctx)
     };
   }
 

@@ -11,7 +11,9 @@ export function parseRewindTargetStep(userContent: string): ConversationState | 
   const navigational =
     /\b(back\s+to|return\s+to|go\s+back\s+to|jump\s+to|switch\s+to|revisit|open\s+the)\b/i.test(lower) ||
     /\b(edit|update|change|fix|correct)\s+(my\s+)?(the\s+)?/i.test(lower);
-  if (!navigational) return null;
+  const correction =
+    /\b(was\s+wrong|is\s+wrong|need\s+to\s+(fix|change|correct|update)|made\s+a\s+mistake)\b/i.test(lower);
+  if (!navigational && !correction) return null;
 
   if (/\bfiscal|first\s+questions|profile\s+questions|residency\s+questions\b/i.test(lower)) return "fiscal_residence";
   if (/\bincome\b/i.test(lower)) return "income_capture";

@@ -2,13 +2,16 @@ import type { ConversationState } from "@tax-platform/shared";
 import { prisma } from "../../db.js";
 import { handleAdvanceIntent } from "./handlers/advance-intent.js";
 import { handleChatIncomeAmendment } from "./handlers/chat-income-amendment.js";
+import { handleFiscalClarify } from "./handlers/fiscal-clarify.js";
 import { handleFiscalConfirm } from "./handlers/fiscal-confirm.js";
+import { handleHelp } from "./handlers/help.js";
 import { handleIncomeDone } from "./handlers/income-done.js";
 import { handleOffTopic } from "./handlers/off-topic.js";
 import { handleReportFinalize } from "./handlers/report-finalize.js";
 import { handleRewind } from "./handlers/rewind.js";
 import { handleStepAdvance } from "./handlers/step-advance.js";
 import { handleTriage } from "./handlers/triage.js";
+import { handleTriageClarify } from "./handlers/triage-clarify.js";
 import { handleTrust } from "./handlers/trust.js";
 import { handleUsFiling } from "./handlers/us-filing.js";
 import { runLlmTurn } from "./llm-turn.js";
@@ -23,7 +26,10 @@ type HandlerFn = (h: HandlerContext) => Promise<HandlerResult>;
 
 const HANDLER_PIPELINE: HandlerFn[] = [
   handleTrust,
+  handleHelp,
+  handleTriageClarify,
   handleTriage,
+  handleFiscalClarify,
   handleUsFiling,
   handleFiscalConfirm,
   handleRewind,

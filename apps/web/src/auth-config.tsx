@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { LoadingShell } from "./components/LoadingShell";
 
 export type AuthConfig = {
   registrationEnabled: boolean;
@@ -28,7 +29,7 @@ export function AuthConfigProvider({ children }: { children: ReactNode }) {
   }, []);
 
   if (!config) {
-    return null;
+    return <LoadingShell message="Starting app…" />;
   }
 
   return <AuthConfigContext.Provider value={config}>{children}</AuthConfigContext.Provider>;

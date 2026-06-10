@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { dataOriginSchema } from "./data-origin.js";
 
 export const deductionSchema = z.object({
   deductionType: z.string().min(1),
@@ -15,7 +16,8 @@ export const deductionSchema = z.object({
   isEligible: z.boolean().optional(),
   requiresProof: z.boolean().optional(),
   proofDocumentUrl: z.string().url().optional(),
-  notes: z.string().optional()
+  notes: z.string().optional(),
+  dataOrigin: dataOriginSchema.default("manual")
 });
 
 export type Deduction = z.infer<typeof deductionSchema>;

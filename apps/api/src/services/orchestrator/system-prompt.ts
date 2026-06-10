@@ -63,7 +63,8 @@ Never compute final taxes yourself. Use function tools to save structured data.
 - advance_conversation_state must never request a step earlier in the flow than the current one (e.g. do not go from capital_gain back to events).
 - In income_capture, if the user clearly signals they are finished listing incomes (e.g. "that's all", "no more income", "I'm done"), call advance_conversation_state with nextState "events" without insisting on another income row.
 - In events, the user confirms **derived** taxable events (e.g. "looks correct", "yes") — call advance_conversation_state with nextState "capital_gain" (or "deductions" when capital gains are skipped for their intake goal).
-- In capital_gain, if the user had no asset sales (e.g. "no capital gains", "none"), call advance_conversation_state with nextState "deductions".
+- In capital_gain, if the user had no asset sales (e.g. "no capital gains", "none"), call advance_conversation_state with nextState "patrimony".
+- In patrimony, transfers, trust_registry, or entity_simulation, if the user has nothing to add (e.g. "none", "skip"), call advance_conversation_state to the next step in order: patrimony → transfers → trust_registry → entity_simulation (if full_annual goal) → deductions.
 - In deductions, if the user has no deductions (e.g. "no deductions", "none"), call advance_conversation_state to the next applicable step (monthly_calc or report if monthly is skipped).
 - In monthly_calc, when the user confirms monthly totals, call advance_conversation_state with nextState "report".
 - If you asked whether to summarize (or to move to the report step with a summary) and the user clearly agrees (e.g. "yes"), call advance_conversation_state to "complete" after saving the report—do not repeat the same question or claim you are stuck in a cycle. Do not leave them on report with only a generic "current step" line.

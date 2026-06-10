@@ -2,9 +2,59 @@ import { fiscalResidenceSchema } from "@tax-platform/shared";
 
 export type FiscalFieldDef = { key: string; prompt: string };
 
+const COUNTRY_NAME_TO_ISO: Record<string, string> = {
+  brazil: "BR",
+  brasil: "BR",
+  "united states": "US",
+  "united states of america": "US",
+  usa: "US",
+  america: "US",
+  portugal: "PT",
+  "united kingdom": "GB",
+  uk: "GB",
+  england: "GB",
+  germany: "DE",
+  france: "FR",
+  spain: "ES",
+  italy: "IT",
+  canada: "CA",
+  mexico: "MX",
+  argentina: "AR",
+  chile: "CL",
+  colombia: "CO",
+  peru: "PE",
+  uruguay: "UY",
+  paraguay: "PY",
+  switzerland: "CH",
+  netherlands: "NL",
+  belgium: "BE",
+  ireland: "IE",
+  australia: "AU",
+  "new zealand": "NZ",
+  japan: "JP",
+  china: "CN",
+  india: "IN",
+  singapore: "SG",
+  "south korea": "KR",
+  korea: "KR"
+};
+
+export function normalizeCountryCode(raw: string): string {
+  const t = raw.trim();
+  if (/^[A-Za-z]{2,3}$/.test(t)) return t.toUpperCase();
+  const mapped = COUNTRY_NAME_TO_ISO[t.toLowerCase()];
+  return mapped ?? t;
+}
+
 const FISCAL_CORE_FIELDS: FiscalFieldDef[] = [
-  { key: "currentResidenceCountry", prompt: "Which country do you currently live in (ISO code)?" },
-  { key: "nationalityCountry", prompt: "What is your country of nationality (ISO code, e.g. BR, US)?" },
+  {
+    key: "currentResidenceCountry",
+    prompt: "Which country do you currently live in? (e.g. Brazil or BR)"
+  },
+  {
+    key: "nationalityCountry",
+    prompt: "What is your country of nationality? (e.g. Brazil or BR, United States or US)"
+  },
   {
     key: "isFiscalResidentBrazil",
     prompt: "Are you a fiscal resident of Brazil for tax purposes? (yes/no)"
@@ -46,6 +96,13 @@ const FISCAL_CONDITIONAL_FIELDS: { key: string; prompt: string; when: (m: Record
   ];
 
 const FISCAL_TAIL_FIELDS: FiscalFieldDef[] = [
+  { key: "cpf", prompt: "What is your CPF (if applicable)? Reply **none** to skip." },
+  { key: "foreignTaxId", prompt: "What is your foreign tax ID (e.g. US SSN/ITIN)? Reply **none** to skip." },
+  { key: "physicallyLivesInBrazil", prompt: "Do you physically live in Brazil? (yes/no)" },
+  { key: "hasPermanentAddressBrazil", prompt: "Do you have a permanent address in Brazil? (yes/no)" },
+  { key: "hasPermanentAddressUSA", prompt: "Do you have a permanent address in the United States? (yes/no)" },
+  { key: "hasUSWorkVisa", prompt: "Do you have a US work visa? (yes/no)" },
+  { key: "hasDependentsBrazilOrAbroad", prompt: "Do you have fiscal dependents in Brazil or abroad? (yes/no)" },
   { key: "birthDate", prompt: "What is your date of birth (YYYY-MM-DD)?" },
   { key: "fullName", prompt: "Great, now what is your full legal name?" },
   { key: "email", prompt: "And what email should we use for your account notifications?" }
@@ -118,7 +175,12 @@ export function coerceFiscalFieldValue(key: string, raw: string): unknown {
     key === "isFiscalResidentUSA" ||
     key === "hasUSCitizenship" ||
     key === "hasGreenCard" ||
-    key === "declaredPermanentExitBrazil"
+    key === "declaredPermanentExitBrazil" ||
+    key === "physicallyLivesInBrazil" ||
+    key === "hasPermanentAddressBrazil" ||
+    key === "hasPermanentAddressUSA" ||
+    key === "hasUSWorkVisa" ||
+    key === "hasDependentsBrazilOrAbroad"
   ) {
     const b = parseBool(raw);
     if (b !== undefined) return b;
@@ -142,9 +204,12 @@ export function coerceFiscalFieldValue(key: string, raw: string): unknown {
     return t;
   }
   const t = raw.trim();
-  if (key === "nationalityCountry" || key === "currentResidenceCountry") {
-    if (/^[A-Za-z]{2,3}$/.test(t)) return t.toUpperCase();
+  if (key === "cpf" || key === "foreignTaxId") {
+    if (/^(none|n\/a|skip)$/i.test(t)) return undefined;
     return t;
+  }
+  if (key === "nationalityCountry" || key === "currentResidenceCountry") {
+    return normalizeCountryCode(t);
   }
   return t;
 }
@@ -156,7 +221,12 @@ export function coerceFiscalBooleansInPlace(ctx: Record<string, unknown>): void 
     "fiscalResidenceOtherCountry",
     "hasUSCitizenship",
     "hasGreenCard",
-    "declaredPermanentExitBrazil"
+    "declaredPermanentExitBrazil",
+    "physicallyLivesInBrazil",
+    "hasPermanentAddressBrazil",
+    "hasPermanentAddressUSA",
+    "hasUSWorkVisa",
+    "hasDependentsBrazilOrAbroad"
   ] as const) {
     const v = ctx[k];
     if (typeof v === "string") {
@@ -173,9 +243,19 @@ export function isValidFiscalFieldValue(key: string, raw: unknown): boolean {
     key === "fiscalResidenceOtherCountry" ||
     key === "hasUSCitizenship" ||
     key === "hasGreenCard" ||
-    key === "declaredPermanentExitBrazil"
+    key === "declaredPermanentExitBrazil" ||
+    key === "physicallyLivesInBrazil" ||
+    key === "hasPermanentAddressBrazil" ||
+    key === "hasPermanentAddressUSA" ||
+    key === "hasUSWorkVisa" ||
+    key === "hasDependentsBrazilOrAbroad"
   ) {
     return coerceBoolLike(raw) !== undefined;
+  }
+  if (key === "cpf" || key === "foreignTaxId") {
+    if (raw === undefined || raw === null) return true;
+    if (typeof raw === "string" && /^(none|n\/a|skip)$/i.test(raw.trim())) return true;
+    return typeof raw === "string" && raw.trim().length >= 1;
   }
   if (key === "daysInBrazilCalendarYear" || key === "daysInUSACalendarYear") {
     const n = typeof raw === "number" ? raw : Number(raw);
@@ -183,7 +263,10 @@ export function isValidFiscalFieldValue(key: string, raw: unknown): boolean {
   }
   if (typeof raw !== "string") return false;
   const t = raw.trim();
-  if (key === "nationalityCountry" || key === "currentResidenceCountry") return t.length >= 2;
+  if (key === "nationalityCountry" || key === "currentResidenceCountry") {
+    const normalized = normalizeCountryCode(String(raw));
+    return /^[A-Za-z]{2,3}$/.test(normalized);
+  }
   if (key === "birthDate") return /^\d{4}-\d{2}-\d{2}$/.test(t);
   if (key === "fullName") return t.length >= 1;
   if (key === "email") return fiscalResidenceSchema.shape.email.safeParse(t).success;
@@ -199,9 +282,17 @@ export function looksLikeFiscalFieldAnswer(key: string, text: string): boolean {
     key === "fiscalResidenceOtherCountry" ||
     key === "hasUSCitizenship" ||
     key === "hasGreenCard" ||
-    key === "declaredPermanentExitBrazil"
+    key === "declaredPermanentExitBrazil" ||
+    key === "physicallyLivesInBrazil" ||
+    key === "hasPermanentAddressBrazil" ||
+    key === "hasPermanentAddressUSA" ||
+    key === "hasUSWorkVisa" ||
+    key === "hasDependentsBrazilOrAbroad"
   ) {
     return parseBool(t) !== undefined;
+  }
+  if (key === "cpf" || key === "foreignTaxId") {
+    return t.length >= 1;
   }
   if (key === "daysInBrazilCalendarYear" || key === "daysInUSACalendarYear") {
     const n = Number(t);
@@ -209,7 +300,10 @@ export function looksLikeFiscalFieldAnswer(key: string, text: string): boolean {
   }
   if (key === "email") return t.includes("@") && t.includes(".");
   if (key === "birthDate") return /^\d{4}-\d{2}-\d{2}$/.test(t) || /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(t);
-  if (key === "nationalityCountry" || key === "currentResidenceCountry") return /^[A-Za-z]{2,3}$/.test(t);
+  if (key === "nationalityCountry" || key === "currentResidenceCountry") {
+    const normalized = normalizeCountryCode(t);
+    return /^[A-Za-z]{2,3}$/.test(normalized);
+  }
   if (key === "fullName") return /[A-Za-zÀ-ÿ]/.test(t) && t.length >= 2;
   return true;
 }
@@ -220,6 +314,10 @@ export function getFiscalQuestionForContext(context: Record<string, unknown>): s
     if (!isValidFiscalFieldValue(key, merged[key])) return prompt;
   }
   return "Say **next step** when you are ready to continue.";
+}
+
+export function formatFiscalValidationError(): string {
+  return "Some answers did not look right. Let's go through your fiscal profile again from the start.";
 }
 
 export function prepareFiscalPayloadForValidation(merged: Record<string, unknown>): Record<string, unknown> {

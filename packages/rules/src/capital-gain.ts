@@ -8,7 +8,10 @@ export type { CapitalGainResult };
 /** Compute capital gain tax under BR or US data packs (see `packages/rules/src/data/`). */
 export function computeCapitalGain(
   input: CapitalGainCalculationInput,
-  jurisdiction: "BR" | "US" = "BR"
+  jurisdiction: "BR" | "US" = "BR",
+  options?: { ordinaryTaxableIncomeUsd?: number }
 ): CapitalGainResult {
-  return jurisdiction === "US" ? computeCapitalGainUs(input) : computeCapitalGainBr(input);
+  return jurisdiction === "US"
+    ? computeCapitalGainUs(input, options?.ordinaryTaxableIncomeUsd ?? 0)
+    : computeCapitalGainBr(input);
 }

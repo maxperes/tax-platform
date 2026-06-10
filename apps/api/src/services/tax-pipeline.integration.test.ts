@@ -7,11 +7,16 @@ const prismaMock = vi.hoisted(() => ({
   taxableEvent: { deleteMany: vi.fn(), create: vi.fn(), findMany: vi.fn() },
   fiscalResidenceProfile: { findUnique: vi.fn() },
   deduction: { findMany: vi.fn() },
+  exemption: { findMany: vi.fn() },
+  asset: { findMany: vi.fn() },
+  internationalTransfer: { findMany: vi.fn() },
+  trustStructure: { findMany: vi.fn() },
+  entitySimulation: { findMany: vi.fn() },
   monthlyTaxCalculation: { findMany: vi.fn(), upsert: vi.fn() },
   monthlyTaxCalculationItem: { deleteMany: vi.fn(), create: vi.fn() },
   taxCalculation: { findMany: vi.fn(), create: vi.fn() },
   capitalGainCalculation: { findMany: vi.fn() },
-  taxReport: { create: vi.fn() },
+  taxReport: { create: vi.fn(), updateMany: vi.fn() },
   ruleOverride: { findMany: vi.fn() },
   conversationSession: { findFirst: vi.fn() },
   $transaction: vi.fn()
@@ -32,6 +37,11 @@ describe("tax pipeline intake to report", () => {
       requiresAdditionalReview: false
     });
     prismaMock.deduction.findMany.mockResolvedValue([]);
+    prismaMock.exemption.findMany.mockResolvedValue([]);
+    prismaMock.asset.findMany.mockResolvedValue([]);
+    prismaMock.internationalTransfer.findMany.mockResolvedValue([]);
+    prismaMock.trustStructure.findMany.mockResolvedValue([]);
+    prismaMock.entitySimulation.findMany.mockResolvedValue([]);
     prismaMock.monthlyTaxCalculation.findMany.mockResolvedValue([]);
     prismaMock.capitalGainCalculation.findMany.mockResolvedValue([]);
     prismaMock.taxCalculation.findMany.mockResolvedValue([]);
@@ -42,6 +52,7 @@ describe("tax pipeline intake to report", () => {
     prismaMock.monthlyTaxCalculationItem.create.mockResolvedValue({});
     prismaMock.taxCalculation.create.mockResolvedValue({});
     prismaMock.taxReport.create.mockResolvedValue({ id: "report-1" });
+    prismaMock.taxReport.updateMany.mockResolvedValue({ count: 0 });
     prismaMock.conversationSession.findFirst.mockResolvedValue(null);
     prismaMock.$transaction.mockImplementation(async (fn: (tx: typeof prismaMock) => Promise<string>) =>
       fn(prismaMock)
@@ -143,6 +154,7 @@ describe("tax pipeline intake to report", () => {
       deductions: [],
       monthly: [],
       capitalGains: [],
+      annualTaxEstimates: [],
       requiresAdditionalReview: false
     });
     expect(summary.title).toContain("2026");

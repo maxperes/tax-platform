@@ -3,6 +3,8 @@
  * instead of silently assuming 1:1 (see resolveBrlFromIncome).
  */
 
+import { lookupPtaxToBrl, lookupPtaxToUsd } from "./ptax.js";
+
 export type FxResolution = {
   amountBrl: number;
   exchangeRate: number;
@@ -12,13 +14,14 @@ export type FxResolution = {
 
 /**
  * BR Carnê-Leão / IRPF: prefer explicit grossAmountBrl; else grossAmount * exchangeRateToBrl.
- * If original currency is BRL and no rate, use 1. If foreign currency without rate, require review.
+ * Falls back to PTAX by paymentDate when available.
  */
 export function resolveBrlFromIncome(input: {
   grossAmount: number;
   originalCurrency: string;
   grossAmountBrl?: number;
   exchangeRateToBrl?: number;
+  paymentDate?: string;
 }): FxResolution {
   if (input.grossAmountBrl !== undefined && input.grossAmountBrl >= 0) {
     const rate =
@@ -36,6 +39,17 @@ export function resolveBrlFromIncome(input: {
       requiresAdditionalReview: false
     };
   }
+  if (input.paymentDate) {
+    const ptax = lookupPtaxToBrl(input.originalCurrency, input.paymentDate);
+    if (ptax !== undefined) {
+      return {
+        amountBrl: input.grossAmount * ptax,
+        exchangeRate: ptax,
+        requiresAdditionalReview: false,
+        notes: `PTAX ${input.originalCurrency}/BRL for ${input.paymentDate.slice(0, 7)}`
+      };
+    }
+  }
   return {
     amountBrl: input.grossAmount,
     exchangeRate: 1,
@@ -44,12 +58,13 @@ export function resolveBrlFromIncome(input: {
   };
 }
 
-/** US side: convert to USD using stored rate if any; otherwise flag review (no silent guess). */
+/** US side: convert to USD using stored rate, PTAX, or flag review. */
 export function resolveUsdFromIncome(input: {
   grossAmount: number;
   originalCurrency: string;
   amountUsd?: number;
   exchangeRateToUsd?: number;
+  paymentDate?: string;
 }): { amountUsd: number; exchangeRate: number; requiresAdditionalReview: boolean; notes?: string } {
   if (input.amountUsd !== undefined && input.amountUsd >= 0) {
     const rate =
@@ -67,10 +82,66 @@ export function resolveUsdFromIncome(input: {
       requiresAdditionalReview: false
     };
   }
+  if (input.paymentDate) {
+    const ptax = lookupPtaxToUsd(input.originalCurrency, input.paymentDate);
+    if (ptax !== undefined) {
+      return {
+        amountUsd: input.grossAmount * ptax,
+        exchangeRate: ptax,
+        requiresAdditionalReview: false,
+        notes: `PTAX ${input.originalCurrency}/USD for ${input.paymentDate.slice(0, 7)}`
+      };
+    }
+  }
   return {
     amountUsd: input.grossAmount,
     exchangeRate: 1,
     requiresAdditionalReview: true,
     notes: "Missing exchangeRateToUsd or amountUsd for non-USD income; using 1:1 placeholder."
+  };
+}
+
+/** Normalize capital-gain amounts to a target currency using optional explicit rates. */
+export function normalizeCapitalGainAmounts(input: {
+  acquisitionValue: number;
+  acquisitionCurrency: string;
+  saleValue: number;
+  saleCurrency: string;
+  targetCurrency: "BRL" | "USD";
+  exchangeRateAcquisition?: number;
+  exchangeRateSale?: number;
+  acquisitionDate?: string;
+  saleDate?: string;
+}): {
+  acquisitionValue: number;
+  saleValue: number;
+  requiresReview: boolean;
+} {
+  const target = input.targetCurrency;
+  let requiresReview = false;
+
+  const toTarget = (amount: number, currency: string, explicitRate: number | undefined, date?: string): number => {
+    if (currency.toUpperCase() === target) return amount;
+    if (explicitRate !== undefined && explicitRate > 0) return amount * explicitRate;
+    if (date) {
+      const ptax =
+        target === "BRL"
+          ? lookupPtaxToBrl(currency, date)
+          : lookupPtaxToUsd(currency, date);
+      if (ptax !== undefined) return amount * ptax;
+    }
+    requiresReview = true;
+    return amount;
+  };
+
+  return {
+    acquisitionValue: toTarget(
+      input.acquisitionValue,
+      input.acquisitionCurrency,
+      input.exchangeRateAcquisition,
+      input.acquisitionDate
+    ),
+    saleValue: toTarget(input.saleValue, input.saleCurrency, input.exchangeRateSale, input.saleDate),
+    requiresReview
   };
 }

@@ -10,8 +10,8 @@ describe("parseRewindTargetStep", () => {
     expect(parseRewindTargetStep("I need to update my deductions")).toBe("deductions");
   });
 
-  it("returns null without navigation intent", () => {
-    expect(parseRewindTargetStep("my income was wrong")).toBeNull();
+  it("parses correction phrases without explicit navigation", () => {
+    expect(parseRewindTargetStep("my income was wrong")).toBe("income_capture");
   });
 
   it("returns null for unrelated text", () => {

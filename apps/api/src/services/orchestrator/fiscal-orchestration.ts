@@ -6,6 +6,7 @@ import {
   coerceFiscalBooleansInPlace,
   coerceFiscalFieldValue,
   firstFiscalFieldPrompt,
+  formatFiscalValidationError,
   getActiveFiscalFieldOrder,
   getFiscalQuestionForContext,
   isValidFiscalFieldValue,
@@ -292,7 +293,7 @@ export async function templateFiscalResidence(
       where: { id: sessionId },
       data: { contextJson: c as Prisma.InputJsonValue }
     });
-    return `I could not validate all fields (${parsed.error.message}). Let's restart: ${firstFiscalFieldPrompt()}`;
+    return `${formatFiscalValidationError()}\n\n${firstFiscalFieldPrompt()}`;
   }
 
   const result = await completeFiscalProfileAndDetermineNext(session.userId, session.taxYear, parsed.data, c);

@@ -26,6 +26,11 @@ describe("BR 2026 data pack", () => {
     expect(t).toBe(taxFromProgressiveTable(3500, BR_IRPF_MONTHLY_2026));
   });
 
+  it("applies Lei 14.754 rate for eligible lines", () => {
+    const t = computeCarneLeaoLineTax(10_000, brRulePack2026, true);
+    expect(t).toBeCloseTo(10_000 * brRulePack2026.lei14754Rate, 4);
+  });
+
   it("builds annual BR estimate with credit cap", () => {
     const est = buildBrAnnualEstimate({
       taxYear: 2026,
@@ -58,7 +63,8 @@ describe("BR 2026 data pack", () => {
       saleValue: 2000,
       saleCurrency: "BRL",
       ownershipPercentageSold: 100,
-      deductibleExpenses: 0
+      deductibleExpenses: 0,
+      dataOrigin: "manual"
     });
     expect(r.gain).toBe(1000);
     expect(r.taxEstimate).toBeGreaterThan(0);

@@ -24,6 +24,12 @@ model User {
   taxReports           TaxReport[]
   taxCalculations      TaxCalculation[]
   consentRecords       ConsentRecord[]
+  assets               Asset[]
+  internationalTransfers InternationalTransfer[]
+  trustStructures      TrustStructure[]
+  entitySimulations    EntitySimulation[]
+  exemptions           Exemption[]
+  dataChangeLogs       DataChangeLog[]
 }
 
 model ConsentRecord {
@@ -134,12 +140,147 @@ model IncomeSource {
   exchangeRateToBrl    Decimal? @db.Decimal(18, 8)
   grossAmountBrl       Decimal? @db.Decimal(18, 4)
   classification       Json?
+  dataOrigin           String   @default("manual")
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, taxYear])
+}
+
+model Asset {
+  id                  String   @id @default(uuid())
+  userId              String
+  taxYear             Int
+  name                String
+  assetType           String
+  country             String
+  acquisitionDate     DateTime @db.Date
+  acquisitionValue    Decimal  @db.Decimal(18, 4)
+  acquisitionCurrency String
+  currentValue        Decimal? @db.Decimal(18, 4)
+  currentCurrency     String?
+  isForeignAsset      Boolean  @default(false)
+  requiresReview      Boolean  @default(false)
+  notes               String?
+  dataOrigin          String   @default("manual")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, taxYear])
+}
+
+model InternationalTransfer {
+  id               String   @id @default(uuid())
+  userId           String
+  taxYear          Int
+  fromCountry      String
+  toCountry        String
+  amount           Decimal  @db.Decimal(18, 4)
+  currency         String
+  transferDate     DateTime @db.Date
+  classification   String
+  isTaxable        Boolean  @default(false)
+  requiresReview   Boolean  @default(false)
+  relatedIncomeId  String?
+  relatedTrustId   String?
+  notes            String?
+  dataOrigin       String   @default("manual")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, taxYear])
+}
+
+model TrustStructure {
+  id                     String   @id @default(uuid())
+  userId                 String
+  taxYear                Int
+  name                   String
+  jurisdiction           String
+  trustType              String
+  settlorName            String?
+  beneficiaryNames       Json?
+  isGrantorTrust         Boolean?
+  annualDistributionsUsd Decimal? @db.Decimal(18, 4)
+  isTaxable              Boolean  @default(false)
+  requiresReview         Boolean  @default(true)
+  notes                  String?
+  dataOrigin             String   @default("manual")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, taxYear])
+}
+
+model EntitySimulation {
+  id                        String   @id @default(uuid())
+  userId                    String
+  taxYear                   Int
+  scenarioName              String
+  proLaborePercent          Decimal  @db.Decimal(5, 2)
+  profitDistributionPercent Decimal  @db.Decimal(5, 2)
+  estimatedOperatingCosts   Decimal  @db.Decimal(18, 4)
+  estimatedEffectiveTaxRate Decimal  @db.Decimal(8, 6)
+  entityCountry             String
+  pfTaxEstimate             Decimal? @db.Decimal(18, 4)
+  pjTaxEstimate             Decimal? @db.Decimal(18, 4)
+  savingsEstimate           Decimal? @db.Decimal(18, 4)
+  currency                  String   @default("BRL")
+  requiresReview            Boolean  @default(true)
+  ruleVersion               String
+  notes                     String?
+  dataOrigin                String   @default("manual")
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, taxYear])
+}
+
+model Exemption {
+  id               String   @id @default(uuid())
+  userId           String
+  taxYear          Int
+  exemptionType    String
+  amount           Decimal  @db.Decimal(18, 4)
+  currency         String
+  amountBrl        Decimal? @db.Decimal(18, 4)
+  taxPeriod        String
+  applicationScope String
+  notes            String?
+  dataOrigin       String   @default("manual")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, taxYear])
+}
+
+model DataChangeLog {
+  id         String   @id @default(uuid())
+  userId     String
+  taxYear    Int
+  entityType String
+  entityId   String
+  changeType String
+  beforeJson Json?
+  afterJson  Json?
+  occurredAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, taxYear])
+  @@index([entityType, entityId])
 }
 
 model TaxableEvent {
@@ -182,6 +323,7 @@ model Deduction {
   requiresProof      Boolean?
   proofDocumentUrl   String?
   notes              String?
+  dataOrigin         String   @default("manual")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -214,6 +356,7 @@ model CapitalGainCalculation {
   jurisdiction            String   @default("BR")
   dataPackVersion           String?
   requiresAdditionalReview  Boolean  @default(false)
+  dataOrigin                String   @default("manual")
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 
@@ -320,6 +463,7 @@ model TaxReport {
   ruleVersion              String
   jurisdiction             String?  @db.VarChar(16)
   dataPackVersion          String?
+  isStale                  Boolean  @default(false)
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
 

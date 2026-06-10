@@ -13,6 +13,30 @@ import {
   isFiscalProfileConfirmPending
 } from "./fiscal-orchestration.js";
 
+export function isHelpIntent(userContent: string): boolean {
+  const lower = userContent.trim().toLowerCase();
+  return /^(help|repeat|i['']?m\s+stuck|what\s+do\s+i\s+do)\b/i.test(lower);
+}
+
+export function isTriageClarificationQuestion(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  if (!t) return false;
+  return (
+    t.includes("?") ||
+    /\b(what is|what's|whats|difference|explain|mean|which one|how do i choose)\b/i.test(t)
+  );
+}
+
+export function isFiscalClarificationQuestion(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  if (!t) return false;
+  if (isHelpIntent(text)) return false;
+  return (
+    t.includes("?") ||
+    /\b(what is|what's|whats|what does|explain|mean|why do you need|iso code|country code)\b/i.test(t)
+  );
+}
+
 export function isTrustOrComplianceConcern(userContent: string): boolean {
   const lower = userContent.trim().toLowerCase();
   if (!lower) return false;
@@ -39,6 +63,7 @@ export function isLikelyOffTopicUserMessage(
   if (state === "fiscal_residence") {
     if (isTriagePending(context)) {
       if (parseIntakeGoal(t)) return false;
+      if (isTriageClarificationQuestion(t)) return false;
       return true;
     }
     if (isFiscalProfileConfirmPending(context)) {
@@ -49,6 +74,7 @@ export function isLikelyOffTopicUserMessage(
       if (parseUsFilingInputs(t)) return false;
       return true;
     }
+    if (isFiscalClarificationQuestion(t)) return false;
     const merged = getFiscalResidenceMergedFields(context);
     const expectedKey = getActiveFiscalFieldOrder(merged).find((f) => !isValidFiscalFieldValue(f.key, merged[f.key]))
       ?.key;

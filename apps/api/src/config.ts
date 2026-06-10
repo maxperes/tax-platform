@@ -88,8 +88,5 @@ export const config = {
   /**
    * When false, `POST /api/auth/register` is rejected. Defaults to open in non-production, closed in production.
    */
-  registrationEnabled: parseBoolEnv(
-    process.env.REGISTRATION_ENABLED,
-    process.env.NODE_ENV !== "production"
-  )
+  registrationEnabled: parseBoolEnv(process.env.REGISTRATION_ENABLED, true)
 };

@@ -32,11 +32,7 @@ export function SignupPage() {
         })
       });
       setToken(res.token);
-      const session = await api<{ id: string }>("/api/sessions", {
-        method: "POST",
-        body: JSON.stringify({ taxYear: new Date().getFullYear() })
-      });
-      nav(`/chat/${session.id}`);
+      nav("/sessions");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Signup failed");
     } finally {

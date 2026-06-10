@@ -1,0 +1,210 @@
+import { Link, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { downloadAuthenticated, getToken } from "../api";
+import { LoadingShell } from "../components/LoadingShell";
+import { formatCalcStatus } from "../lib/chat-constants";
+import { formatMoney } from "../lib/chat-utils";
+
+type FullTaxReport = {
+  id: string;
+  taxYear: number;
+  title: string;
+  createdAt: string;
+  requiresAdditionalReview: boolean;
+  isStale?: boolean;
+  sections?: Array<{ title: string; bodyMarkdown?: string | null; items?: Array<{ label: string; valueJson: unknown }> }>;
+  summaryJson: {
+    fiscalProfile?: string;
+    annualTaxEstimates?: Array<{
+      jurisdiction?: string;
+      currency?: string;
+      grossIncome?: number;
+      taxableBase?: number;
+      netTaxDue?: number;
+      calculationStatus?: string;
+    }>;
+    monthlyCarnetLeao?: Array<{
+      taxMonth?: string;
+      taxableBase?: number | string;
+      netTaxDue?: number | string;
+      calculationStatus?: string;
+    }>;
+    capitalGains?: Array<{ assetType?: string; gainAmount?: number | string; taxEstimate?: number | string }>;
+    estimatesDisclaimer?: string;
+  };
+};
+
+export function ReportPage() {
+  const { reportId } = useParams<{ reportId: string }>();
+
+  const { data: report, isLoading, isError } = useQuery({
+    queryKey: ["taxReportFull", reportId],
+    queryFn: async (): Promise<FullTaxReport> => {
+      const token = getToken();
+      const res = await fetch(`/api/report/${reportId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (!res.ok) throw new Error("Report not found");
+      return (await res.json()) as FullTaxReport;
+    },
+    enabled: Boolean(reportId)
+  });
+
+  if (isLoading) return <LoadingShell message="Loading report…" />;
+
+  if (isError || !report) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <div className="text-center space-y-4">
+          <p className="text-rose-300">Report not found.</p>
+          <Link to="/sessions" className="text-emerald-400 hover:underline">
+            Back to sessions
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const summary = report.summaryJson;
+
+  return (
+    <div className="min-h-screen p-6 print:p-0">
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+          <Link to="/sessions" className="text-sm text-emerald-400 hover:underline">
+            Back to sessions
+          </Link>
+          <button
+            type="button"
+            onClick={() => void downloadAuthenticated(`/api/report/${report.id}/download.html`, `tax-report-${report.taxYear}.html`)}
+            className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm hover:border-emerald-600"
+          >
+            Download HTML
+          </button>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm hover:border-emerald-600"
+          >
+            Print
+          </button>
+        </div>
+
+        <header className="rounded-xl border border-slate-800 bg-slate-900/80 p-6">
+          <h1 className="text-2xl font-semibold">{report.title}</h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Tax year {report.taxYear} · Generated {new Date(report.createdAt).toLocaleString()}
+          </p>
+          {report.isStale && (
+            <p className="mt-3 text-sm text-amber-200 rounded-lg border border-amber-800/50 bg-amber-950/30 px-3 py-2">
+              This report may be stale — underlying data changed after generation. Regenerate from chat.
+            </p>
+          )}
+          {report.requiresAdditionalReview && (
+            <p className="mt-3 text-sm text-amber-200 rounded-lg border border-amber-800/50 bg-amber-950/30 px-3 py-2">
+              Flagged for additional expert review — figures are preliminary orientation only.
+            </p>
+          )}
+          {summary.fiscalProfile && (
+            <p className="mt-3 text-sm text-slate-300">Fiscal profile: {summary.fiscalProfile}</p>
+          )}
+        </header>
+
+        {summary.annualTaxEstimates && summary.annualTaxEstimates.length > 0 && (
+          <section className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+            <h2 className="text-lg font-medium mb-3">Annual estimates</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-slate-400 text-left">
+                  <tr>
+                    <th className="pr-4 py-1">Jurisdiction</th>
+                    <th className="pr-4 py-1">Gross income</th>
+                    <th className="pr-4 py-1">Net tax due</th>
+                    <th className="py-1">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.annualTaxEstimates.map((est, i) => (
+                    <tr key={i} className="border-t border-slate-800">
+                      <td className="pr-4 py-2">{est.jurisdiction}</td>
+                      <td className="pr-4 py-2">{formatMoney(est.grossIncome, est.currency)}</td>
+                      <td className="pr-4 py-2 font-medium">{formatMoney(est.netTaxDue, est.currency)}</td>
+                      <td className="py-2">{formatCalcStatus(est.calculationStatus)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {summary.monthlyCarnetLeao && summary.monthlyCarnetLeao.length > 0 && (
+          <section className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+            <h2 className="text-lg font-medium mb-3">Monthly Carnê-Leão</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-slate-400 text-left">
+                  <tr>
+                    <th className="pr-4 py-1">Month</th>
+                    <th className="pr-4 py-1">Taxable base (BRL)</th>
+                    <th className="pr-4 py-1">Net due</th>
+                    <th className="py-1">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.monthlyCarnetLeao.map((m, i) => (
+                    <tr key={i} className="border-t border-slate-800">
+                      <td className="pr-4 py-2">{m.taxMonth}</td>
+                      <td className="pr-4 py-2">{formatMoney(m.taxableBase, "BRL")}</td>
+                      <td className="pr-4 py-2">{formatMoney(m.netTaxDue, "BRL")}</td>
+                      <td className="py-2">{formatCalcStatus(m.calculationStatus)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {summary.capitalGains && summary.capitalGains.length > 0 && (
+          <section className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+            <h2 className="text-lg font-medium mb-3">Capital gains</h2>
+            <ul className="space-y-2 text-sm">
+              {summary.capitalGains.map((cg, i) => (
+                <li key={i}>
+                  {cg.assetType}: gain {formatMoney(cg.gainAmount)} · estimated tax {formatMoney(cg.taxEstimate)}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {report.sections && report.sections.length > 0 && (
+          <section className="rounded-xl border border-slate-800 bg-slate-950/50 p-4 space-y-4">
+            <h2 className="text-lg font-medium">Report sections</h2>
+            {report.sections.map((sec, i) => (
+              <div key={i} className="border-t border-slate-800 pt-3 first:border-0 first:pt-0">
+                <h3 className="font-medium text-slate-200">{sec.title}</h3>
+                {sec.bodyMarkdown && <p className="text-sm text-slate-400 mt-1">{sec.bodyMarkdown}</p>}
+                {sec.items && sec.items.length > 0 && (
+                  <ul className="mt-2 text-sm space-y-1">
+                    {sec.items.map((it, j) => (
+                      <li key={j}>
+                        <span className="text-slate-400">{it.label}:</span>{" "}
+                        {typeof it.valueJson === "object" ? JSON.stringify(it.valueJson) : String(it.valueJson)}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </section>
+        )}
+
+        {summary.estimatesDisclaimer && (
+          <p className="text-sm text-slate-500 italic">{summary.estimatesDisclaimer}</p>
+        )}
+      </div>
+    </div>
+  );
+}

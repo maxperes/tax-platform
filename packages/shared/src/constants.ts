@@ -1,5 +1,5 @@
 /** Engine semver; bump when calculation algorithms change. */
-export const ENGINE_VERSION = "0.2.0";
+export const ENGINE_VERSION = "1.1.0";
 
 /** Data pack ids (per jurisdiction/year); bump when statutory tables change. */
 export const DATA_PACK_BR_2026 = "br-2026-1";
@@ -20,6 +20,10 @@ export const CONVERSATION_STATES = [
   "income_capture",
   "events",
   "capital_gain",
+  "patrimony",
+  "transfers",
+  "trust_registry",
+  "entity_simulation",
   "deductions",
   "monthly_calc",
   "report",

@@ -262,4 +262,32 @@ describe("handleUserMessage orchestrator pipeline", () => {
     expect(result.sessionState).toBe("income_capture");
     expect(result.assistantText).toMatch(/store|privacy/i);
   });
+
+  it("help intent repeats current step guidance", async () => {
+    seedSession({ state: "income_capture", contextJson: { intakeGoal: "foreign_salary" } });
+    prismaMock.incomeSource.findMany.mockResolvedValue([]);
+
+    const result = await handleUserMessage("sess-1", "help");
+    expect(result.assistantText).toMatch(/Help — income/i);
+    expect(result.assistantText).toMatch(/that's all/i);
+  });
+
+  it("triage clarification explains options instead of off-topic redirect", async () => {
+    seedSession({ state: "fiscal_residence", contextJson: { _triagePending: true } });
+
+    const result = await handleUserMessage("sess-1", "what is the difference between foreign_salary and full_annual?");
+    expect(result.assistantText).toMatch(/Intake focus options/i);
+    expect(result.assistantText).not.toMatch(/can't answer unrelated/i);
+  });
+
+  it("accepts country name Brazil during fiscal intake", async () => {
+    seedSession({
+      state: "fiscal_residence",
+      contextJson: { _triagePending: false, intakeGoal: "full_annual", _lastAskedKey: "currentResidenceCountry" }
+    });
+
+    const result = await handleUserMessage("sess-1", "Brazil");
+    expect(result.assistantText).toMatch(/nationality|Brazil|BR/i);
+    expect(store.session?.contextJson).toMatchObject({ currentResidenceCountry: "BR" });
+  });
 });

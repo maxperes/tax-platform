@@ -1,7 +1,8 @@
-import { validateDeductionForMvp } from "@tax-platform/rules";
+import { validateDeduction } from "@tax-platform/rules";
 import type { Deduction } from "@tax-platform/shared";
 import type { Deduction as DeductionRow } from "@prisma/client";
 import { prisma } from "../../db.js";
+import { logDataChange } from "./data-change-log.js";
 
 type CreateDeductionResult =
   | { ok: true; row: DeductionRow }
@@ -12,7 +13,7 @@ export async function createDeduction(
   taxYear: number,
   deduction: Deduction
 ): Promise<CreateDeductionResult> {
-  const v = validateDeductionForMvp(deduction);
+  const v = validateDeduction(deduction);
   if (!v.ok) {
     return { ok: false, errors: v.errors };
   }
@@ -31,11 +32,13 @@ export async function createDeduction(
       taxPeriod: deduction.taxPeriod,
       applicationScope: deduction.applicationScope,
       isRecurring: deduction.isRecurring ?? null,
-      isEligible: deduction.isEligible ?? null,
+      isEligible: v.isEligible,
       requiresProof: deduction.requiresProof ?? null,
       proofDocumentUrl: deduction.proofDocumentUrl ?? null,
-      notes: deduction.notes ?? null
+      notes: deduction.notes ?? null,
+      dataOrigin: deduction.dataOrigin ?? "manual"
     }
   });
+  await logDataChange(userId, taxYear, "Deduction", row.id, "create", undefined, row);
   return { ok: true, row };
 }

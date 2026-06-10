@@ -54,6 +54,18 @@ export function intakeRedirectForState(state: ConversationState, context: Record
   if (state === "capital_gain") {
     return "Next, we capture **capital gains** (asset type, acquisition and sale dates/values, currencies). Describe one disposition at a time here in chat.";
   }
+  if (state === "patrimony") {
+    return "Register **assets and patrimony** (property, investments, foreign holdings) using the patrimony form or describe in chat.";
+  }
+  if (state === "transfers") {
+    return "Record **international transfers** (from/to country, amount, date, classification). Own-account moves are non-taxable.";
+  }
+  if (state === "trust_registry") {
+    return "Register any **trust structures** (name, jurisdiction, revocable vs irrevocable). Say **none** if not applicable.";
+  }
+  if (state === "entity_simulation") {
+    return "Run a **PF vs PJ simulation** (pro-labore %, profit distribution, estimated PJ tax rate) using the form or chat.";
+  }
   if (state === "monthly_calc") {
     return "We review **monthly Carnê-Leão** totals built from your income timeline. Confirm the month table or say what to fix.";
   }

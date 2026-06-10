@@ -196,7 +196,7 @@ export async function resolveIncomeGaps(userId: string, taxYear: number): Promis
         incomeId: row.id,
         payerName: row.payerName,
         issue: "Missing BRL conversion (FX rate or gross amount in BRL)",
-        suggestion: `Add exchange rate or BRL equivalent for **${row.payerName}** (${cur}).`
+        suggestion: `Add an FX rate (e.g. **5.32 BRL per USD**) or gross in BRL (e.g. **54500 BRL**) for **${row.payerName}** (${cur}).`
       });
     }
     if (isCarnet && cur !== "BRL" && row.taxPaidOriginCountry == null && row.withholdingTax == null) {
@@ -346,6 +346,18 @@ export function isMonthlyCalcConfirmIntent(userContent: string): boolean {
   return isEventsConfirmIntent(userContent);
 }
 
+export function isDomainStepSkipIntent(userContent: string): boolean {
+  const lower = userContent.trim().toLowerCase();
+  if (!lower) return false;
+  return (
+    /^no\b/i.test(lower) ||
+    /^none\b/i.test(lower) ||
+    /\bnothing\s+to\s+(add|report)\b/i.test(lower) ||
+    /\b(skip|no)\b/i.test(lower) ||
+    /\bdon['']?t\s+have\b/i.test(lower)
+  );
+}
+
 export function isCapitalGainSkipIntent(userContent: string): boolean {
   const lower = userContent.trim().toLowerCase();
   if (!lower) return false;
@@ -369,6 +381,23 @@ export function nextStateAfterEvents(plan: IntakeModulePlan): ConversationState 
 }
 
 export function nextStateAfterCapitalGain(_plan: IntakeModulePlan): ConversationState {
+  return "patrimony";
+}
+
+export function nextStateAfterPatrimony(_plan: IntakeModulePlan): ConversationState {
+  return "transfers";
+}
+
+export function nextStateAfterTransfers(_plan: IntakeModulePlan): ConversationState {
+  return "trust_registry";
+}
+
+export function nextStateAfterTrustRegistry(plan: IntakeModulePlan): ConversationState {
+  if (plan.intakeGoal === "full_annual") return "entity_simulation";
+  return "deductions";
+}
+
+export function nextStateAfterEntitySimulation(_plan: IntakeModulePlan): ConversationState {
   return "deductions";
 }
 
@@ -391,6 +420,12 @@ export function applyProfileAwareAdvance(
   }
   if (current === "capital_gain" && next === "monthly_calc") return "deductions";
   if (current === "capital_gain" && next === "report" && !plan.skipMonthly) return "deductions";
+  if (current === "capital_gain" && next === "deductions") return "patrimony";
+  if (current === "patrimony" && next === "deductions") return "transfers";
+  if (current === "transfers" && next === "deductions") return "trust_registry";
+  if (current === "trust_registry" && next === "deductions" && plan.intakeGoal === "full_annual") {
+    return "entity_simulation";
+  }
   return next;
 }
 
@@ -452,7 +487,8 @@ export async function formatMonthlySummaryBlockForRecap(userId: string, taxYear:
 
 export function specialistHandoffBlock(requiresReview: boolean, gapsSummary: string): string {
   if (!requiresReview && !gapsSummary) return "";
-  let block = "\n**Specialist handoff**\n";
+  let block =
+    "\n**Want a preliminary report?** Reply **proceed anyway** in chat to generate one now, or fix the items below first.\n\n**Specialist handoff**\n";
   if (requiresReview) {
     block +=
       "This case is flagged for **additional expert review**. Results are orientation only until reviewed.\n";
@@ -460,8 +496,6 @@ export function specialistHandoffBlock(requiresReview: boolean, gapsSummary: str
   if (gapsSummary) {
     block += gapsSummary + "\n";
   }
-  block +=
-    "Reply **proceed anyway** to generate a preliminary report, or fix items above first.\n";
   return block;
 }
 

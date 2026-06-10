@@ -5,12 +5,20 @@ import request from "supertest";
 const configMock = vi.hoisted(() => ({
   registrationEnabled: true,
   jwtSecret: "test-secret",
-  adminToken: "admin-secret"
+  adminToken: "admin-secret",
+  privacyPolicyUrl: "",
+  privacyPolicyVersion: "v1"
 }));
 
 const prismaMock = vi.hoisted(() => ({
   user: {
     findUnique: vi.fn(),
+    create: vi.fn()
+  },
+  consentRecord: {
+    createMany: vi.fn()
+  },
+  privacyAuditEvent: {
     create: vi.fn()
   }
 }));
@@ -50,20 +58,31 @@ describe("controlled registration", () => {
       email: "new@example.com",
       passwordHash: "hash"
     });
+    prismaMock.consentRecord.createMany.mockResolvedValue({ count: 2 });
+    prismaMock.privacyAuditEvent.create.mockResolvedValue({});
   });
 
   it("GET /api/auth/config exposes registration flag", async () => {
     configMock.registrationEnabled = false;
     const res = await request(createApp()).get("/api/auth/config");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ registrationEnabled: false });
+    expect(res.body).toEqual({
+      registrationEnabled: false,
+      privacyPolicyUrl: null,
+      privacyPolicyVersion: "v1"
+    });
   });
 
   it("POST /api/auth/register returns 403 when registration is disabled", async () => {
     configMock.registrationEnabled = false;
     const res = await request(createApp())
       .post("/api/auth/register")
-      .send({ email: "new@example.com", password: "password123" });
+      .send({
+        email: "new@example.com",
+        password: "password123",
+        acceptedTerms: true,
+        acceptedSensitiveDataProcessing: true
+      });
 
     expect(res.status).toBe(403);
     expect(res.body.error).toBe("Registration is not open");
@@ -73,7 +92,12 @@ describe("controlled registration", () => {
   it("POST /api/auth/register creates a user when registration is enabled", async () => {
     const res = await request(createApp())
       .post("/api/auth/register")
-      .send({ email: "new@example.com", password: "password123" });
+      .send({
+        email: "new@example.com",
+        password: "password123",
+        acceptedTerms: true,
+        acceptedSensitiveDataProcessing: true
+      });
 
     expect(res.status).toBe(201);
     expect(res.body.token).toBe("jwt-token");

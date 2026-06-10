@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { dataOriginSchema } from "./data-origin.js";
 
 export const capitalGainCalculationSchema = z.object({
   assetId: z.string().uuid().optional(),
@@ -15,7 +16,8 @@ export const capitalGainCalculationSchema = z.object({
   deductibleExpenses: z.number().nonnegative().default(0),
   foreignTaxPaid: z.number().nonnegative().optional(),
   exchangeRateAcquisition: z.number().positive().optional(),
-  exchangeRateSale: z.number().positive().optional()
+  exchangeRateSale: z.number().positive().optional(),
+  dataOrigin: dataOriginSchema.default("manual")
 });
 
 export type CapitalGainCalculationInput = z.infer<typeof capitalGainCalculationSchema>;

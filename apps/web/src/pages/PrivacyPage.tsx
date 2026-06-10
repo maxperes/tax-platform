@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthConfig } from "../auth-config";
-import { api, downloadAuthenticated, getToken, setToken } from "../api";
+import { api, downloadAuthenticated, getToken, setToken, signOut } from "../api";
 
 type Profile = {
   id: string;
@@ -122,6 +122,21 @@ export function PrivacyPage() {
             className="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-sm font-medium disabled:opacity-50"
           >
             {exporting ? "Preparing export…" : "Export my data"}
+          </button>
+        </section>
+
+        <section className="space-y-3 border-t border-slate-800 pt-6">
+          <h2 className="text-lg font-medium">Sign out</h2>
+          <p className="text-sm text-slate-400">End your session on this device without deleting data.</p>
+          <button
+            type="button"
+            onClick={() => {
+              signOut();
+              nav("/login", { replace: true });
+            }}
+            className="rounded-lg border border-slate-700 px-4 py-2 text-sm hover:border-emerald-600"
+          >
+            Sign out
           </button>
         </section>
 
