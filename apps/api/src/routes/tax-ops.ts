@@ -6,8 +6,7 @@ import { asyncHandler } from "../middleware/async-handler.js";
 import {
   syncTaxableEvents,
   recomputeMonthlyTax,
-  estimateAnnualTax,
-  buildAndSaveReport
+  estimateAnnualTax
 } from "../services/tax-pipeline.js";
 
 export const taxOpsRouter = Router();
@@ -53,8 +52,12 @@ taxOpsRouter.post(
   "/report",
   asyncHandler(async (req, res) => {
     const { taxYear } = z.object({ taxYear: z.number().int() }).parse(req.body);
-    const id = await buildAndSaveReport(req.user!.sub, taxYear);
-    res.status(201).json({ id });
+    const { enqueueJob, JOB_NAMES } = await import("../services/jobs/queue.js");
+    const { jobId, mode } = await enqueueJob(JOB_NAMES.buildReport, {
+      userId: req.user!.sub,
+      taxYear
+    });
+    res.status(202).json({ jobId, mode, taxYear });
   })
 );
 
@@ -64,7 +67,7 @@ taxOpsRouter.get(
   asyncHandler(async (req, res) => {
     const taxYear = z.coerce.number().int().parse(req.query.taxYear);
     const report = await prisma.taxReport.findFirst({
-      where: { userId: req.user!.sub, taxYear },
+      where: { userId: req.user!.sub, taxYear, isStale: false },
       orderBy: { createdAt: "desc" },
       select: { id: true, taxYear: true, title: true, createdAt: true, ruleVersion: true }
     });

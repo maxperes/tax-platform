@@ -9,6 +9,45 @@ export type ParsedPaymentLine = {
   paymentDate: string;
 };
 
+/** English words the amount parser must not treat as ISO currency. */
+const CURRENCY_STOPWORDS = new Set([
+  "PER",
+  "THE",
+  "AND",
+  "FOR",
+  "PAY",
+  "NET",
+  "TAX",
+  "ALL",
+  "ONE",
+  "TWO",
+  "NEW",
+  "OLD",
+  "NOT",
+  "ANY",
+  "JAN",
+  "FEB",
+  "MAR",
+  "APR",
+  "MAY",
+  "JUN",
+  "JUL",
+  "AUG",
+  "SEP",
+  "OCT",
+  "NOV",
+  "DEC"
+]);
+
+export function normalizeCurrencyCode(code: string): string {
+  return code.trim().toUpperCase();
+}
+
+export function isPlausibleCurrencyCode(code: string): boolean {
+  const cur = normalizeCurrencyCode(code);
+  return /^[A-Z]{3}$/.test(cur) && !CURRENCY_STOPWORDS.has(cur);
+}
+
 export function parsePaymentLines(text: string): ParsedPaymentLine[] {
   // Amount + ISO4217-ish 3-letter currency, then optional filler (e.g. "payment date") before YYYY-MM-DD.
   const re =
@@ -22,8 +61,8 @@ export function parsePaymentLines(text: string): ParsedPaymentLine[] {
     const suffix = (m[2] ?? "").toUpperCase();
     if (suffix === "K") amt *= 1000;
     if (suffix === "M") amt *= 1_000_000;
-    const cur = m[3]!.toUpperCase();
-    if (!/^[A-Z]{3}$/.test(cur)) continue;
+    const cur = normalizeCurrencyCode(m[3]!);
+    if (!isPlausibleCurrencyCode(cur)) continue;
     const date = m[4]!;
     out.push({ grossAmount: amt, originalCurrency: cur, paymentDate: date });
   }
@@ -55,11 +94,45 @@ export function parseMonthlySalaryLines(text: string, taxYear: number): ParsedCh
   const suffix = (m[2] ?? "").toUpperCase();
   if (suffix === "K") amt *= 1000;
   if (suffix === "M") amt *= 1_000_000;
-  const cur = m[3]!.toUpperCase();
-  if (!/^[A-Z]{3}$/.test(cur)) return [];
+  const cur = normalizeCurrencyCode(m[3]!);
+  if (!isPlausibleCurrencyCode(cur)) return [];
   const dm = /(\d{4}-\d{2}-\d{2})/.exec(normalized);
   const paymentDate = dm?.[1] ?? `${taxYear}-01-31`;
   return [{ grossAmount: amt, originalCurrency: cur, paymentDate, periodicity: "monthly" }];
+}
+
+export type ParsedFxConversion =
+  | { kind: "rate"; rateToBrl: number; foreignCurrency: string }
+  | { kind: "gross_brl"; amountBrl: number };
+
+/** Parse "1.55 BRL per PEN", "1 USD = 5.32 BRL", or a BRL gross like "16900 BRL" (no payment date). */
+export function parseFxConversionReply(text: string): ParsedFxConversion | null {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (!t) return null;
+  if (parsePaymentLines(t).length > 0) return null;
+
+  const per = /(\d+(?:[.,]\d+)?)\s*BRL\s+per\s+(?:1\s+)?([A-Za-z]{3})\b/i.exec(t);
+  if (per) {
+    const rateToBrl = Number(per[1]!.replace(",", "."));
+    if (!Number.isFinite(rateToBrl) || rateToBrl <= 0) return null;
+    return { kind: "rate", rateToBrl, foreignCurrency: normalizeCurrencyCode(per[2]!) };
+  }
+
+  const eq = /\b1\s*([A-Za-z]{3})\s*=\s*(\d+(?:[.,]\d+)?)\s*BRL\b/i.exec(t);
+  if (eq) {
+    const rateToBrl = Number(eq[2]!.replace(",", "."));
+    if (!Number.isFinite(rateToBrl) || rateToBrl <= 0) return null;
+    return { kind: "rate", rateToBrl, foreignCurrency: normalizeCurrencyCode(eq[1]!) };
+  }
+
+  const gross = /^(\d+(?:[.,]\d+)?)\s*BRL\.?$/i.exec(t);
+  if (gross) {
+    const amountBrl = Number(gross[1]!.replace(",", "."));
+    if (!Number.isFinite(amountBrl) || amountBrl < 0) return null;
+    return { kind: "gross_brl", amountBrl };
+  }
+
+  return null;
 }
 
 export type IncomeKindHint = {
@@ -98,7 +171,7 @@ export function inferPayerNameFromIncomeChatLine(text: string): string {
 
 /** Heuristic payer country from payment currency (not legal advice; user should confirm). */
 export function defaultOriginCountryForCurrency(currency: string): string {
-  switch (currency.toUpperCase()) {
+  switch (normalizeCurrencyCode(currency)) {
     case "BRL":
       return "BR";
     case "USD":

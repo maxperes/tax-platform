@@ -2,6 +2,9 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuthConfig } from "../auth-config";
 import { api, setToken, type LoginResponse } from "../api";
+import { Header } from "../components/layout/Header";
+import { Footer } from "../components/layout/Footer";
+import { PrimaryButton } from "../components/ui/PrimaryButton";
 
 export function LoginPage() {
   const nav = useNavigate();
@@ -30,54 +33,47 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-8 shadow-xl">
-        <h1 className="text-2xl font-semibold mb-1">Welcome back</h1>
-        <p className="text-slate-400 text-sm mb-6">Sign in to continue your tax interview.</p>
-        <form onSubmit={onSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm text-slate-400 mb-1">Email</label>
-            <input
-              className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-slate-400 mb-1">Password</label>
-            <input
-              className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
-          {error && <p className="text-sm text-red-400">{error}</p>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-emerald-600 hover:bg-emerald-500 py-2 font-medium disabled:opacity-50"
-          >
-            {loading ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
-        {!registrationEnabled && (
-          <p className="text-center text-sm text-slate-500 mt-4">
-            Access is by invitation. Contact us if you need an account.
-          </p>
-        )}
-        {registrationEnabled && (
-          <p className="text-center text-sm text-slate-500 mt-4">
-            No account?{" "}
-            <Link className="text-emerald-400 hover:underline" to="/signup">
-              Request access
-            </Link>
-          </p>
-        )}
-      </div>
+    <div className="flex min-h-screen flex-col">
+      <Header />
+      <main id="main" className="flex flex-1 items-center justify-center px-5 py-12">
+        <div className="w-full max-w-md rounded-2xl border border-surface-border bg-white p-8 shadow-card">
+          <p className="eyebrow">Sign in</p>
+          <h1 className="mt-2 font-display text-2xl text-navy">Welcome back</h1>
+          <p className="mt-2 text-sm text-navy-700/75">Continue your Brazilian tax map or filing intake.</p>
+          <form onSubmit={onSubmit} className="mt-6 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-navy mb-1">Email</label>
+              <input className="field-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-navy mb-1">Password</label>
+              <input
+                className="field-input"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+            {error && <p className="text-sm text-alertRed">{error}</p>}
+            <PrimaryButton type="submit" disabled={loading} fullWidth>
+              {loading ? "Signing in…" : "Sign in"}
+            </PrimaryButton>
+          </form>
+          {!registrationEnabled && (
+            <p className="mt-4 text-center text-sm text-navy-700/70">Access is by invitation.</p>
+          )}
+          {registrationEnabled && (
+            <p className="mt-4 text-center text-sm text-navy-700/70">
+              No account?{" "}
+              <Link className="font-medium text-accent-dark hover:underline" to="/signup">
+                Request access
+              </Link>
+            </p>
+          )}
+        </div>
+      </main>
+      <Footer />
     </div>
   );
 }

@@ -31,6 +31,7 @@ export async function buildUserDataExport(userId: string) {
     select: {
       id: true,
       email: true,
+      plan: true,
       createdAt: true,
       updatedAt: true,
       fiscalProfiles: true,
@@ -56,7 +57,13 @@ export async function buildUserDataExport(userId: string) {
         },
         orderBy: { createdAt: "asc" }
       },
-      consentRecords: { orderBy: { grantedAt: "asc" } }
+      consentRecords: { orderBy: { grantedAt: "asc" } },
+      twinCases: {
+        include: { persons: true },
+        orderBy: { createdAt: "asc" }
+      },
+      documents: { orderBy: { createdAt: "asc" } },
+      impactAssessments: { orderBy: { createdAt: "asc" } }
     }
   });
 

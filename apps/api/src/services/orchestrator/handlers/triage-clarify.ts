@@ -4,13 +4,11 @@ import { isTriageClarificationQuestion } from "../intents.js";
 import type { HandlerContext, HandlerResult } from "../session-context.js";
 
 export function triageOptionsExplanationText(): string {
-  const lines = INTAKE_GOAL_OPTIONS.map(
-    (o) => `- **${o.id}** — ${o.label}`
-  );
+  const lines = INTAKE_GOAL_OPTIONS.map((o, i) => `${i + 1}. ${o.label}`);
   return (
     "**Intake focus options:**\n" +
     lines.join("\n") +
-    "\n\nPick the closest match, or use **full_annual** if several apply."
+    "\n\nPick the closest match, or reply **4** if several apply."
   );
 }
 

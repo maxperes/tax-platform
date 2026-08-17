@@ -1,6 +1,5 @@
 import type { ConversationState } from "@tax-platform/shared";
 import { prisma } from "../../../db.js";
-import { buildAndSaveReport } from "../../tax-pipeline.js";
 import {
   isProceedAnywayIntent,
   resolveIncomeGaps,
@@ -12,8 +11,9 @@ import {
   lastAssistantOfferedSummary
 } from "../../summary-offer.js";
 import { isShortAffirmativeAdvance, lastAssistantContent } from "../intents.js";
-import { formatIntakeRecapForChat, intakeRedirectForState } from "../messages.js";
+import { intakeRedirectForState } from "../messages.js";
 import type { HandlerContext, HandlerResult } from "../session-context.js";
+import { enqueueAndWait, JOB_NAMES } from "../../jobs/queue.js";
 
 const SUMMARY_YES_STATES: ConversationState[] = [
   "events",
@@ -29,19 +29,25 @@ const PROCEED_ANYWAY_STATES: ConversationState[] = [
   "deductions",
   "capital_gain",
   "monthly_calc",
-  "report"
+  "report",
+  "complete"
 ];
 
 async function finalizeReportAndComplete(
   h: HandlerContext
 ): Promise<string> {
-  const reportId = await buildAndSaveReport(h.session.userId, h.session.taxYear);
-  const recap = await formatIntakeRecapForChat(h.session.userId, h.session.taxYear, reportId);
+  await enqueueAndWait(JOB_NAMES.buildReport, {
+    userId: h.session.userId,
+    taxYear: h.session.taxYear
+  });
   await prisma.conversationSession.update({
     where: { id: h.sessionId },
     data: { state: "complete" }
   });
-  return recap + "\n\n" + intakeRedirectForState("complete", h.ctx);
+  return (
+    `Your tax report for **${h.session.taxYear}** is ready. Open **View filing report** in the header (or download JSON there).\n\n` +
+    intakeRedirectForState("complete", h.ctx)
+  );
 }
 
 export async function handleReportFinalize(h: HandlerContext): Promise<HandlerResult> {
@@ -54,9 +60,7 @@ export async function handleReportFinalize(h: HandlerContext): Promise<HandlerRe
     return { assistantText: await finalizeReportAndComplete(h) };
   }
 
-  const explicitReportCmd =
-    isExplicitGenerateReportIntent(h.userContent) &&
-    (stForSummary === "report" || stForSummary === "monthly_calc" || stForSummary === "complete");
+  const explicitReportCmd = isExplicitGenerateReportIntent(h.userContent);
 
   if (!SUMMARY_YES_STATES.includes(stForSummary) && !explicitReportCmd) return null;
 

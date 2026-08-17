@@ -2,13 +2,44 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  margin: 0;
-  font-family: system-ui, -apple-system, sans-serif;
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-surface-muted text-navy antialiased font-sans;
+  }
+
+  section[id] {
+    scroll-margin-top: 5rem;
+  }
+
+  ::selection {
+    @apply bg-accent-light text-navy;
+  }
+}
+
+@layer components {
+  .skip-link {
+    @apply sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-navy focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-white;
+  }
+
+  .eyebrow {
+    @apply text-xs font-semibold uppercase tracking-[0.14em] text-accent;
+  }
+
+  .field-input {
+    @apply w-full rounded-lg border border-surface-border bg-white px-3 py-2 text-sm text-navy placeholder:text-navy-700/40 focus:border-accent focus:outline focus:outline-2 focus:outline-offset-1 focus:outline-accent;
+  }
 }
 
 :focus-visible {
-  outline: 2px solid #34d399;
+  outline: 2px solid #FF5A36;
   outline-offset: 2px;
 }
 
@@ -21,7 +52,7 @@ body {
 
 .chat-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: #475569 #0f172a;
+  scrollbar-color: #94a3b8 #e2e8f0;
 }
 
 .chat-scrollbar::-webkit-scrollbar {
@@ -29,16 +60,30 @@ body {
 }
 
 .chat-scrollbar::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: #e2e8f0;
   border-radius: 8px;
 }
 
 .chat-scrollbar::-webkit-scrollbar-thumb {
-  background: #475569;
+  background: #94a3b8;
   border-radius: 8px;
-  border: 2px solid #0f172a;
+  border: 2px solid #e2e8f0;
 }
 
 .chat-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #64748b;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

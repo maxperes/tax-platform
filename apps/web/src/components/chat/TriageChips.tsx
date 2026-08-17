@@ -10,17 +10,17 @@ export function TriageChips({ visible, disabled, onSelect }: Props) {
   if (!visible) return null;
   return (
     <div className="mb-3 space-y-2">
-      <p className="text-xs text-slate-400">Choose your focus (tap to prefill, then Send):</p>
+      <p className="text-xs text-navy-700/75">Choose your focus (tap to prefill, then Send):</p>
       <div className="flex flex-wrap gap-2">
-        {TRIAGE_OPTIONS.map((opt) => (
+        {TRIAGE_OPTIONS.map((opt, i) => (
           <button
             key={opt.id}
             type="button"
             disabled={disabled}
-            onClick={() => onSelect(opt.id)}
-            className="rounded-full border border-sky-700 bg-sky-950 px-3 py-1 text-xs text-sky-200 hover:border-sky-500 disabled:opacity-50"
+            onClick={() => onSelect(String(i + 1))}
+            className="rounded-full border border-accent bg-accent-light px-3 py-1 text-xs text-accent-dark hover:border-accent disabled:opacity-50"
           >
-            {opt.label}
+            {i + 1}. {opt.label}
           </button>
         ))}
       </div>

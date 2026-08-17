@@ -9,6 +9,12 @@ import { ChatPage } from "./pages/ChatPage";
 import { PrivacyPage } from "./pages/PrivacyPage";
 import { ReportPage } from "./pages/ReportPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
+import { LandingPage } from "./pages/LandingPage";
+import { StartPage } from "./pages/StartPage";
+import { InterviewPage } from "./pages/InterviewPage";
+import { DocumentsPage } from "./pages/DocumentsPage";
+import { TaxMapPage } from "./pages/TaxMapPage";
+import { ImpactReportPage } from "./pages/ImpactReportPage";
 import { api, getToken, type UserProfile } from "./api";
 import { LoadingShell } from "./components/LoadingShell";
 
@@ -59,7 +65,7 @@ function HomeRedirect() {
   });
 
   if (!token) {
-    return <Navigate to="/login" replace />;
+    return <LandingPage />;
   }
   if (isLoading) {
     return <LoadingShell message="Loading…" />;
@@ -84,6 +90,14 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/start"
+        element={
+          <RequireAuth>
+            <StartPage />
+          </RequireAuth>
+        }
+      />
+      <Route
         path="/admin/users"
         element={
           <RequireAdmin>
@@ -96,6 +110,46 @@ function AppRoutes() {
         element={
           <RequireAuth>
             <ChatPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/impact"
+        element={
+          <RequireAuth>
+            <InterviewPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/impact/:twinId"
+        element={
+          <RequireAuth>
+            <InterviewPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/impact/:twinId/documents"
+        element={
+          <RequireAuth>
+            <DocumentsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/impact/:twinId/map"
+        element={
+          <RequireAuth>
+            <TaxMapPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/impact/:twinId/report"
+        element={
+          <RequireAuth>
+            <ImpactReportPage />
           </RequireAuth>
         }
       />

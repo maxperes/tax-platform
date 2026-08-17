@@ -4,7 +4,7 @@ import {
   getUsRulePackForYear,
   resolveBrDataPackId,
   resolveUsDataPackId,
-  includesInOrdinaryAnnual,
+  includesInUsOrdinaryAnnual,
   resolveUsdFromIncome
 } from "@tax-platform/rules";
 import type { CapitalGainCalculationInput } from "@tax-platform/shared";
@@ -47,7 +47,7 @@ export async function createCapitalGainCalculation(
     let grossUsd = 0;
     for (const row of incomes) {
       const cls = row.classification as { calculationModule?: string; taxTreatment?: string } | null;
-      if (!includesInOrdinaryAnnual(cls)) continue;
+      if (!includesInUsOrdinaryAnnual(cls)) continue;
       const fx = resolveUsdFromIncome({
         grossAmount: row.grossAmount.toNumber(),
         originalCurrency: row.originalCurrency,

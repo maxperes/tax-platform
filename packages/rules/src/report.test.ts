@@ -23,4 +23,19 @@ describe("buildTaxReportSummary", () => {
     expect(summary.summaryJson.annualTaxEstimates).toHaveLength(1);
     expect(summary.summaryJson.estimatesDisclaimer).toMatch(/not filing results/);
   });
+
+  it("mentions unconverted amounts when estimates are preliminary", () => {
+    const summary = buildTaxReportSummary({
+      taxYear: 2026,
+      fiscalProfile: "dual_residence",
+      incomes: [],
+      events: [],
+      deductions: [],
+      monthly: [],
+      capitalGains: [],
+      annualTaxEstimates: [{ jurisdiction: "US", calculationStatus: "preliminary" }],
+      requiresAdditionalReview: true
+    });
+    expect(summary.summaryJson.estimatesDisclaimer).toMatch(/could not be converted/);
+  });
 });

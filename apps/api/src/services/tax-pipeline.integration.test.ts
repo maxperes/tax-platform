@@ -4,7 +4,7 @@ import { DATA_PACK_BR_2026, buildRuleVersionStamp } from "@tax-platform/shared";
 
 const prismaMock = vi.hoisted(() => ({
   incomeSource: { findMany: vi.fn() },
-  taxableEvent: { deleteMany: vi.fn(), create: vi.fn(), findMany: vi.fn() },
+  taxableEvent: { deleteMany: vi.fn(), create: vi.fn(), createMany: vi.fn(), findMany: vi.fn() },
   fiscalResidenceProfile: { findUnique: vi.fn() },
   deduction: { findMany: vi.fn() },
   exemption: { findMany: vi.fn() },
@@ -47,6 +47,7 @@ describe("tax pipeline intake to report", () => {
     prismaMock.taxCalculation.findMany.mockResolvedValue([]);
     prismaMock.taxableEvent.deleteMany.mockResolvedValue({ count: 0 });
     prismaMock.taxableEvent.create.mockResolvedValue({});
+    prismaMock.taxableEvent.createMany.mockResolvedValue({ count: 0 });
     prismaMock.monthlyTaxCalculation.upsert.mockResolvedValue({ id: "monthly-1" });
     prismaMock.monthlyTaxCalculationItem.deleteMany.mockResolvedValue({ count: 0 });
     prismaMock.monthlyTaxCalculationItem.create.mockResolvedValue({});
@@ -100,9 +101,9 @@ describe("tax pipeline intake to report", () => {
 
     const count = await syncTaxableEvents("user-1", 2026);
     expect(count).toBe(1);
-    expect(prismaMock.taxableEvent.create).toHaveBeenCalledWith(
+    expect(prismaMock.taxableEvent.createMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ incomeSourceId: "income-1" })
+        data: [expect.objectContaining({ incomeSourceId: "income-1" })]
       })
     );
   });

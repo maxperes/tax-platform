@@ -43,13 +43,16 @@ vi.mock("../../db.js", () => ({ prisma: prismaMock }));
 vi.mock("../../config.js", () => ({ config: { llmEnabled: true, privacyPolicyUrl: "" } }));
 
 const runAssistantWithTools = vi.hoisted(() => vi.fn());
+const runAssistantToolRecovery = vi.hoisted(() => vi.fn());
 
 vi.mock("../llm.js", () => ({
   runAssistantWithTools,
+  runAssistantToolRecovery,
   rewriteSafeResponse: vi.fn()
 }));
 
 import { handleUserMessage } from "./handle-user-message.js";
+import { postToolCallAssistantText } from "./messages.js";
 
 function seedSession(contextJson: Record<string, unknown>) {
   store.session = {
@@ -77,7 +80,7 @@ describe("runLlmTurn fiscal_residence", () => {
     prismaMock.incomeSource.findMany.mockResolvedValue([]);
   });
 
-  it("does not append a second deterministic question after the LLM reply", async () => {
+  it("saves a recognized fiscal answer and asks the next schema question", async () => {
     seedSession({
       _triagePending: false,
       intakeGoal: "full_annual",
@@ -85,18 +88,35 @@ describe("runLlmTurn fiscal_residence", () => {
       nationalityCountry: "BR",
       isFiscalResidentBrazil: true
     });
-    runAssistantWithTools.mockResolvedValue({
-      content: "Thanks for confirming! When is your birth date? Please provide it in the format YYYY-MM-DD.",
-      toolCalls: []
-    });
 
     const result = await handleUserMessage("sess-llm", "yes");
 
-    expect(result.assistantText).toBe(
-      "Thanks for confirming! When is your birth date? Please provide it in the format YYYY-MM-DD."
+    expect(runAssistantWithTools).not.toHaveBeenCalled();
+    expect(result.assistantText).toMatch(/days did you spend in Brazil/i);
+    expect(result.assistantText).not.toMatch(/progress on the fiscal profile/i);
+    expect(result.assistantText).not.toMatch(/can't answer unrelated/i);
+    expect(store.session?.contextJson).toMatchObject({
+      physicallyLivesInBrazil: true,
+      _lastAskedKey: "daysInBrazilCalendarYear"
+    });
+  });
+
+  it("does not announce progress saved after every fiscal field", async () => {
+    const text = await postToolCallAssistantText(
+      "user-1",
+      "fiscal_residence",
+      "fiscal_residence",
+      2026,
+      {
+        _triagePending: false,
+        intakeGoal: "full_annual",
+        currentResidenceCountry: "BR",
+        nationalityCountry: "BR",
+        isFiscalResidentBrazil: true
+      }
     );
-    expect(result.assistantText).not.toMatch(/Now, let's continue/i);
-    expect(result.assistantText).not.toMatch(/fiscal resident of the United States/i);
-    expect(store.session?.contextJson).toMatchObject({ _lastAskedKey: "birthDate" });
+    expect(text).not.toMatch(/progress on the fiscal profile/i);
+    expect(text).not.toMatch(/Now, let's continue/i);
+    expect(text).toMatch(/currently in Brazil/i);
   });
 });

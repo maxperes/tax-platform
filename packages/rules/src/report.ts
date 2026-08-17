@@ -24,6 +24,7 @@ export function buildTaxReportSummary(input: {
   trusts?: unknown[];
   entitySimulations?: unknown[];
   annualTaxEstimates?: unknown[];
+  unconvertedIncome?: { amount: number; currency: string; payerName: string }[];
   requiresAdditionalReview: boolean;
   ruleVersion?: string;
 }): TaxReportInput & { sections: ReportSectionDef[] } {
@@ -34,6 +35,22 @@ export function buildTaxReportSummary(input: {
       : input.fiscalProfile === "dual_residence"
         ? `${buildRuleVersionStamp(DATA_PACK_BR_2026)}+${buildRuleVersionStamp(DATA_PACK_US_2026)}`
         : buildRuleVersionStamp(DATA_PACK_BR_2026));
+
+  const estimates = (input.annualTaxEstimates ?? []) as {
+    calculationStatus?: string;
+    requiresAdditionalReview?: boolean;
+  }[];
+  const preliminaryEstimates = estimates.some(
+    (e) => e.calculationStatus === "preliminary" || e.requiresAdditionalReview === true
+  );
+  const estimatesDisclaimer = [
+    "Annual tax figures are engine estimates from current inputs; they are not filing results or legal advice. Rates validated for calendar year 2026.",
+    preliminaryEstimates || input.requiresAdditionalReview
+      ? "Preliminary rows exclude amounts that could not be converted (missing exchange rate). Dual residence is always flagged for specialist review."
+      : null
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   const summaryJson = {
     fiscalProfile: input.fiscalProfile,
@@ -48,8 +65,8 @@ export function buildTaxReportSummary(input: {
     trustStructures: input.trusts ?? [],
     entitySimulations: input.entitySimulations ?? [],
     annualTaxEstimates: input.annualTaxEstimates ?? [],
-    estimatesDisclaimer:
-      "Annual tax figures are engine estimates from current inputs; they are not filing results or legal advice. Rates validated for calendar year 2026.",
+    unconvertedIncome: input.unconvertedIncome ?? [],
+    estimatesDisclaimer,
     generatedAt: new Date().toISOString()
   };
 

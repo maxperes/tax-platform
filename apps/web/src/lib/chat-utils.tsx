@@ -12,7 +12,7 @@ export function renderChatEmphasis(text: string): ReactNode {
       parts.push(<span key={`t${k++}`}>{text.slice(last, m.index)}</span>);
     }
     parts.push(
-      <strong key={`b${k++}`} className="font-semibold text-slate-100">
+      <strong key={`b${k++}`} className="font-semibold text-navy">
         {m[1]}
       </strong>
     );

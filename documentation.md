@@ -1,9 +1,30 @@
-# Documento de Requisitos – Sistema de Tributação Internacional (Brasil ↔ EUA)
+# Documento de Requisitos – Tax Residency Impact Assessment (Brasil ↔ EUA)
 
 
 ## 1. Visão Geral
 
-Sistema para cálculo de tributação internacional para pessoas físicas com foco Brasil–EUA.
+Produto principal: **Tax Residency Impact Assessment** — simulação estratégica do impacto da imigração fiscal para o Brasil. O cliente tipicamente **ainda não** é residente fiscal brasileiro.
+
+Pergunta comercial: *Se eu me tornar residente fiscal no Brasil em DD/MM/AAAA, o que muda na minha vida financeira, patrimonial e tributária, e o que posso fazer hoje para me preparar?*
+
+### Camadas do produto
+
+1. **As Is (fotografia)** — inventário estruturado da situação atual; sem recomendações.
+2. **To Be (simulação)** — hipótese de residência fiscal brasileira a partir de uma data; mapa do que passa a ser tributável, obrigações, bitributação, deltas por categoria, riscos.
+3. **Planejamento** — alavancas pré-mudança e action plan (plano Pro).
+
+### Motores
+
+- **Facts Engine** — Tax Digital Twin (fatos do cliente).
+- **Legal Rules Engine** — normas com vigência, hipótese de incidência, cites e índice de confiabilidade (não apenas alíquotas).
+- **Planning Engine** — comparação de cenários.
+
+### Planos
+
+- **Basic:** As Is + To Be bruto (sem isenções/compensações/deduções) + teaser de planejamento.
+- **Pro:** aplicação de reliefs, cenários, Twin contínuo.
+
+O fluxo conversacional RF-001–RF-017 permanece como intake complementar.
 
 ## 2. Requisitos Funcionais
 

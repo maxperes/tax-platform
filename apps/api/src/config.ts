@@ -88,5 +88,42 @@ export const config = {
   /**
    * When false, `POST /api/auth/register` is rejected. Defaults to open in non-production, closed in production.
    */
-  registrationEnabled: parseBoolEnv(process.env.REGISTRATION_ENABLED, true)
+  registrationEnabled: parseBoolEnv(process.env.REGISTRATION_ENABLED, true),
+  /**
+   * Local fallback for document uploads when S3 is not configured.
+   * Not horizontal-safe — use S3_* for multi-replica.
+   */
+  uploadsDir: process.env.UPLOADS_DIR?.trim() || path.resolve(process.cwd(), "uploads"),
+  /** Redis URL for admission control, rate limits, and BullMQ. Required for multi-replica. */
+  redisUrl: process.env.REDIS_URL?.trim() || "",
+  /** Max in-flight LLM completions across the cluster. */
+  llmMaxInFlight: Math.max(1, Number(process.env.LLM_MAX_IN_FLIGHT) || 40),
+  /** Soft TTL for semaphore keys (seconds). */
+  llmSemaphoreTtlSeconds: Math.max(30, Number(process.env.LLM_SEMAPHORE_TTL_SECONDS) || 120),
+  /** Per-completion timeout (ms). */
+  llmTimeoutMs: Math.max(5_000, Number(process.env.LLM_TIMEOUT_MS) || 60_000),
+  /** Max completion tokens for tool turns. */
+  llmMaxTokens: Math.max(256, Number(process.env.LLM_MAX_TOKENS) || 2048),
+  /** Max tool recovery rounds per turn. */
+  llmMaxToolRounds: Math.max(1, Number(process.env.LLM_MAX_TOOL_ROUNDS) || 2),
+  /** Chat messages per user per window. */
+  rateLimitChatMax: Math.max(1, Number(process.env.RATE_LIMIT_CHAT_MAX) || 60),
+  rateLimitChatWindowSeconds: Math.max(1, Number(process.env.RATE_LIMIT_CHAT_WINDOW_SECONDS) || 60),
+  /** Auth login/register per IP per window. */
+  rateLimitAuthMax: Math.max(1, Number(process.env.RATE_LIMIT_AUTH_MAX) || 30),
+  rateLimitAuthWindowSeconds: Math.max(1, Number(process.env.RATE_LIMIT_AUTH_WINDOW_SECONDS) || 60),
+  /** Prisma/pg connection limit per process (append to DATABASE_URL if unset). */
+  databasePoolSize: Math.max(1, Number(process.env.DATABASE_POOL_SIZE) || 10),
+  /** S3-compatible object storage (optional; falls back to local uploadsDir). */
+  s3Bucket: process.env.S3_BUCKET?.trim() || "",
+  s3Region: process.env.S3_REGION?.trim() || process.env.AWS_REGION?.trim() || "us-east-1",
+  s3Endpoint: process.env.S3_ENDPOINT?.trim() || "",
+  s3AccessKeyId: process.env.S3_ACCESS_KEY_ID?.trim() || "",
+  s3SecretAccessKey: process.env.S3_SECRET_ACCESS_KEY?.trim() || "",
+  s3ForcePathStyle: parseBoolEnv(process.env.S3_FORCE_PATH_STYLE, false),
+  /** When true, API/worker process runs BullMQ workers in-process (dev). Prefer separate worker process in prod. */
+  runWorkersInProcess: parseBoolEnv(process.env.RUN_WORKERS_IN_PROCESS, process.env.NODE_ENV !== "production"),
+  get objectStorageEnabled(): boolean {
+    return Boolean(config.s3Bucket);
+  }
 };

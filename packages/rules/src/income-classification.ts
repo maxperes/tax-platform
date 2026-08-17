@@ -20,9 +20,8 @@ export function classifyIncome(
   if (complexNature || income.incomeType.toLowerCase().includes("rsu")) {
     taxTreatment = "complex";
     calculationModule = "trust_offshore";
-  } else if (fiscalProfile === "resident_usa") {
+  } else if (fiscalProfile === "resident_usa" || fiscalProfile === "dual_residence") {
     taxTreatment = "taxable";
-    calculationModule = "irpf";
     const t = income.incomeType.toLowerCase();
     const passive =
       t.includes("dividend") ||
@@ -31,6 +30,16 @@ export function classifyIncome(
       t.includes("royalty") ||
       income.nature === "investment";
     ftcBasket = passive ? "passive" : "general";
+    // Dual: Brazil monthly carnet_leao for foreign work; US still taxes worldwide (includesInUsOrdinaryAnnual).
+    if (fiscalProfile === "dual_residence" && origin === "foreign") {
+      calculationModule = "carnet_leao";
+      const divLike =
+        income.nature === "investment" &&
+        (t.includes("dividend") || t.includes("profit") || t.includes("distribution"));
+      if (divLike) lei14754ForeignProfitsEligible = true;
+    } else {
+      calculationModule = "irpf";
+    }
   } else if (fiscalProfile === "resident_brazil" && origin === "foreign") {
     taxTreatment = "taxable";
     calculationModule = "carnet_leao";

@@ -43,6 +43,7 @@ export function ChatPage() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [syncingMap, setSyncingMap] = useState(false);
   const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
   const [assistantTyping, setAssistantTyping] = useState(false);
   const [typingDots, setTypingDots] = useState(".");
@@ -141,7 +142,7 @@ export function ChatPage() {
       return (await res.json()) as LatestReportMeta;
     },
     enabled: Boolean(sessionId && session && (session.state === "complete" || session.state === "report")),
-    staleTime: 15_000
+    staleTime: 0
   });
 
   type RulesFreshness = {
@@ -298,7 +299,10 @@ export function ChatPage() {
         });
       }
       await qc.invalidateQueries({ queryKey: ["session", sessionId] });
+      await qc.invalidateQueries({ queryKey: ["incomes", sessionId, session.taxYear] });
+      await qc.invalidateQueries({ queryKey: ["deductions", sessionId, session.taxYear] });
       await qc.invalidateQueries({ queryKey: ["taxReportLatest", sessionId, session.taxYear] });
+      await qc.invalidateQueries({ queryKey: ["taxReportFull"] });
       setOptimisticMessages([]);
       setStreamingText("");
       setLastSavedAt(new Date().toLocaleTimeString());
@@ -334,8 +338,34 @@ export function ChatPage() {
     }
   }
 
+  async function openTaxMap() {
+    if (!sessionId) return;
+    setActionError(null);
+    setSyncingMap(true);
+    try {
+      const result = await api<{ twinId: string }>(`/api/sessions/${sessionId}/sync-to-twin`, {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+      if (!result?.twinId) {
+        throw new Error("Could not open your tax map.");
+      }
+      // Full navigation: App remounts <Routes> on every pathname, which can drop useNavigate().
+      window.location.assign(`/impact/${result.twinId}/map`);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not build your tax map.");
+      setSyncingMap(false);
+    }
+  }
+
+  const inReportPhase = session?.state === "complete" || session?.state === "report";
+  const showResultsSummary = inReportPhase && Boolean(fullReport);
+  const showMapCta = Boolean(session);
+  const mapButtonClass =
+    "inline-flex items-center rounded-lg border border-accent bg-accent-light px-3 py-1.5 text-xs font-medium text-accent-dark hover:bg-accent-light disabled:opacity-50";
+
   const headerActionClass =
-    "inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 hover:border-sky-600 no-underline";
+    "inline-flex items-center rounded-lg border border-surface-border bg-white px-3 py-1.5 text-xs text-navy hover:border-accent no-underline";
 
   function prefetchReport(reportId: string) {
     void qc.prefetchQuery({
@@ -343,6 +373,35 @@ export function ChatPage() {
       queryFn: () => fetchTaxReport(reportId),
       staleTime: 60_000
     });
+  }
+
+  function reportActionButtons(reportId: string) {
+    return (
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={syncingMap}
+          onClick={() => void openTaxMap()}
+          className={mapButtonClass}
+        >
+          {syncingMap ? "Building map…" : "View 360° tax map"}
+        </button>
+        <a
+          href={`/report/${reportId}`}
+          onMouseEnter={() => prefetchReport(reportId)}
+          className="inline-flex items-center rounded-lg border border-accent bg-accent-light px-3 py-1.5 text-xs font-medium text-accent-dark hover:bg-accent-light no-underline"
+        >
+          View filing report
+        </a>
+        <button
+          type="button"
+          onClick={() => void downloadLatestReportJson()}
+          className="rounded-lg border border-surface-border px-3 py-1.5 text-xs hover:border-accent"
+        >
+          Download JSON
+        </button>
+      </div>
+    );
   }
 
   async function startOver() {
@@ -431,6 +490,7 @@ export function ChatPage() {
       }
       await qc.invalidateQueries({ queryKey: ["incomes", sessionId, session.taxYear] });
       await qc.invalidateQueries({ queryKey: ["session", sessionId] });
+      await qc.invalidateQueries({ queryKey: ["taxReportLatest", sessionId, session.taxYear] });
     } catch (err) {
       setIncomeError(err instanceof Error ? err.message : "Could not save income row");
     } finally {
@@ -646,12 +706,12 @@ export function ChatPage() {
   const whyHint = WHY_HINT_BY_STATE[session.state] ?? "We will keep this short and one question at a time.";
   const sessionNotices = activeSessionNotices(session);
   const showTriageChips = session.state === "fiscal_residence" && session.messages.length <= 1;
-  const busy = sending || resetting || navigatingStep;
+  const busy = sending || resetting || navigatingStep || syncingMap;
 
   return (
-    <div className="h-screen overflow-hidden max-w-3xl mx-auto p-2 sm:p-4">
-      <div className="h-full flex flex-col rounded-xl border border-slate-800 bg-slate-950/40">
-        <header className="relative border-b border-slate-800 px-3 sm:px-4 py-3 sm:py-4 max-h-[45vh] overflow-y-auto chat-scrollbar">
+    <div className="h-screen overflow-hidden bg-surface-muted">
+      <div className="mx-auto flex h-full max-w-3xl flex-col border-x border-surface-border bg-white">
+        <header className="relative border-b border-surface-border px-3 sm:px-4 py-3 sm:py-4 max-h-[45vh] overflow-y-auto chat-scrollbar">
           <div className="flex items-start justify-between gap-3">
             <h1 className="text-lg sm:text-xl font-semibold">Tax intake</h1>
             <div ref={noticeCenterRef} className="flex flex-wrap items-center justify-end gap-2">
@@ -663,48 +723,68 @@ export function ChatPage() {
                 containerRef={noticeCenterRef}
               />
               <a href="/sessions" className={headerActionClass}>
-                Sessions
+                Home
+              </a>
+              <a href="/start" className={headerActionClass}>
+                Assessment
               </a>
               <a href="/privacy" className={headerActionClass}>
                 Privacy
               </a>
-              <button type="button" onClick={handleSignOut} className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 hover:border-sky-600">
+              <button type="button" onClick={handleSignOut} className="rounded-lg border border-surface-border bg-white px-3 py-1.5 text-xs text-navy hover:border-accent">
                 Sign out
               </button>
-              <button type="button" onClick={() => void startOver()} disabled={resetting} className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 hover:border-emerald-600 disabled:opacity-50">
+              <button type="button" onClick={() => void startOver()} disabled={resetting} className="rounded-lg border border-surface-border bg-white px-3 py-1.5 text-xs text-navy hover:border-accent disabled:opacity-50">
                 {resetting ? "Starting over..." : "Start over"}
               </button>
             </div>
           </div>
-          <p className="text-sm text-slate-400 mt-1">
-            Year {session.taxYear} · Step <span className="text-emerald-400">{stepLabelForState(session.state)}</span> ·{" "}
+          <p className="text-sm text-navy-700/75 mt-1">
+            Year {session.taxYear} · Step <span className="font-medium text-navy">{stepLabelForState(session.state)}</span> ·{" "}
             {progress.index}/{progress.total}
           </p>
-          <p className="mt-2 text-xs text-slate-400">{whyHint}</p>
+          <p className="mt-2 text-xs text-navy-700/75">
+            {whyHint} Your answers also build the same 360° tax map as the structured interview.
+          </p>
           <StepPills currentState={session.state} progressIndex={progress.index} disabled={busy} onJump={(s) => void jumpToStep(s)} />
+          {showMapCta && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={syncingMap}
+                onClick={() => void openTaxMap()}
+                className={mapButtonClass}
+              >
+                {syncingMap ? "Building map…" : "View 360° tax map"}
+              </button>
+              <span className="text-[11px] text-navy-700/65">
+                Syncs this intake into your cross-border map.
+              </span>
+            </div>
+          )}
           {actionError && <ActionBanner message={actionError} onDismiss={() => setActionError(null)} />}
           {session.messages.length > 1 && !hideWelcomeBanner && (
-            <div className="mt-3 rounded-lg border border-sky-800/60 bg-sky-950/30 px-3 py-2 text-xs text-sky-100 flex gap-3 items-start justify-between">
+            <div className="mt-3 rounded-lg border border-accent/30 bg-accent-light/30 px-3 py-2 text-xs text-navy flex gap-3 items-start justify-between">
               <p className="min-w-0 flex-1">{NOTICE_WELCOME_BACK.body}</p>
-              <button type="button" onClick={() => { if (sessionId) localStorage.setItem(welcomeBannerStorageKey(sessionId), "1"); setHideWelcomeBanner(true); }} className="shrink-0 rounded border border-sky-700/60 px-2 py-0.5 text-[11px]">
+              <button type="button" onClick={() => { if (sessionId) localStorage.setItem(welcomeBannerStorageKey(sessionId), "1"); setHideWelcomeBanner(true); }} className="shrink-0 rounded border border-accent/60 px-2 py-0.5 text-[11px]">
                 Hide
               </button>
             </div>
           )}
           {session.requiresAdditionalReview && !hideReviewBanner && (
-            <div className="mt-3 rounded-lg border border-amber-700/50 bg-amber-950/40 px-3 py-2 text-sm text-amber-100 flex gap-3 items-start justify-between" role="status">
+            <div className="mt-3 rounded-lg border border-warn/30 bg-warn-light px-3 py-2 text-sm text-warn flex gap-3 items-start justify-between" role="status">
               <p className="min-w-0 flex-1">{renderChatEmphasis(NOTICE_ADDITIONAL_REVIEW.body)}</p>
-              <button type="button" onClick={() => { if (sessionId) localStorage.setItem(reviewBannerStorageKey(sessionId), "1"); setHideReviewBanner(true); }} className="shrink-0 rounded border border-amber-700/60 px-2 py-0.5 text-[11px]">
+              <button type="button" onClick={() => { if (sessionId) localStorage.setItem(reviewBannerStorageKey(sessionId), "1"); setHideReviewBanner(true); }} className="shrink-0 rounded border border-warn/40 px-2 py-0.5 text-[11px]">
                 Hide
               </button>
             </div>
           )}
           {rulesFreshness?.isRulesOutdated && !hideRulesBanner && (
-            <div className="mt-3 rounded-lg border border-amber-700/50 bg-amber-950/40 px-3 py-2 text-sm text-amber-100 flex gap-3 items-start justify-between" role="alert">
+            <div className="mt-3 rounded-lg border border-warn/30 bg-warn-light px-3 py-2 text-sm text-warn flex gap-3 items-start justify-between" role="alert">
               <p className="min-w-0 flex-1">
                 {renderChatEmphasis(NOTICE_RULES_OUTDATED.body)}
                 {rulesFreshness.outdatedSources.length > 0 && (
-                  <span className="block mt-1 text-xs text-amber-200/80">
+                  <span className="block mt-1 text-xs text-warn">
                     Affected: {rulesFreshness.outdatedSources.join(", ")} · current rules: {rulesFreshness.currentRuleVersion}
                   </span>
                 )}
@@ -715,62 +795,48 @@ export function ChatPage() {
                   if (sessionId) localStorage.setItem(rulesFreshnessBannerStorageKey(sessionId), "1");
                   setHideRulesBanner(true);
                 }}
-                className="shrink-0 rounded border border-amber-700/60 px-2 py-0.5 text-[11px]"
+                className="shrink-0 rounded border border-warn/40 px-2 py-0.5 text-[11px]"
               >
                 Hide
               </button>
             </div>
           )}
-          {(session.state === "complete" || session.state === "report") && fullReport && (
-            <div className="mt-3 rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-3 text-xs text-slate-200 space-y-3">
-              <p className="text-sm font-medium text-emerald-200">Results summary</p>
+          {showResultsSummary && fullReport && (
+            <div className="mt-3 rounded-lg border border-surface-border bg-surface-muted px-3 py-3 text-xs text-navy space-y-3">
+              <p className="text-sm font-medium text-navy">Results summary</p>
               {fullReport.summaryJson.annualTaxEstimates?.map((est, i) => (
                 <p key={i}>
                   <strong>{est.jurisdiction}</strong>: net due {formatMoney(est.netTaxDue, est.currency)} ({formatCalcStatus(est.calculationStatus)})
                 </p>
               ))}
-              {latestReportMeta && (
-                <div className="flex flex-wrap gap-2">
-                  <a
-                    href={`/report/${latestReportMeta.id}`}
-                    onMouseEnter={() => prefetchReport(latestReportMeta.id)}
-                    className="inline-flex items-center rounded-lg border border-emerald-600/60 bg-emerald-900/40 px-3 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-900/70 no-underline"
-                  >
-                    View report
-                  </a>
-                  <button type="button" onClick={() => void downloadLatestReportJson()} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs hover:border-emerald-600">
-                    Download JSON
-                  </button>
-                </div>
-              )}
+              {latestReportMeta && reportActionButtons(latestReportMeta.id)}
             </div>
           )}
           {session.state === "report" && !latestReportMeta && (
-            <div className="mt-3 rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2 text-xs">
-              <button type="button" disabled={sending} onClick={() => send("generate the report")} className="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 text-xs font-medium disabled:opacity-50">
+            <div className="mt-3 rounded-lg border border-surface-border bg-surface-muted px-3 py-2 text-xs">
+              <button type="button" disabled={sending} onClick={() => send("generate the report")} className="rounded-full bg-accent hover:bg-accent-dark px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
                 Generate report
               </button>
             </div>
           )}
-          {session.state === "complete" && (
-            <div className="mt-3 rounded-lg border border-emerald-800/50 bg-emerald-950/25 px-3 py-2 text-xs text-emerald-100 space-y-2">
+          {session.state === "complete" && !(fullReport && latestReportMeta) && (
+            <div className="mt-3 rounded-lg border border-accent/30 bg-accent-light px-3 py-2 text-xs text-navy space-y-2">
               {latestReportMeta ? (
+                reportActionButtons(latestReportMeta.id)
+              ) : (
                 <div className="flex flex-wrap gap-2">
-                  <a
-                    href={`/report/${latestReportMeta.id}`}
-                    onMouseEnter={() => prefetchReport(latestReportMeta.id)}
-                    className="inline-flex items-center rounded-lg border border-emerald-600/60 bg-emerald-900/40 px-3 py-1.5 text-xs font-medium text-emerald-100 no-underline"
+                  <button
+                    type="button"
+                    disabled={syncingMap}
+                    onClick={() => void openTaxMap()}
+                    className={mapButtonClass}
                   >
-                    View report
-                  </a>
-                  <button type="button" onClick={() => void downloadLatestReportJson()} className="rounded-lg border border-emerald-600/60 px-3 py-1.5 text-xs">
-                    Download JSON
+                    {syncingMap ? "Building map…" : "View 360° tax map"}
+                  </button>
+                  <button type="button" disabled={sending} onClick={() => send("generate the report")} className="rounded-full bg-accent hover:bg-accent-dark px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
+                    Generate filing report
                   </button>
                 </div>
-              ) : (
-                <button type="button" disabled={sending} onClick={() => send("generate the report")} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium disabled:opacity-50">
-                  Generate report
-                </button>
               )}
             </div>
           )}
@@ -785,7 +851,7 @@ export function ChatPage() {
           onRetry={lastFailedMessage ? () => void sendMessage(lastFailedMessage) : undefined}
         />
 
-        <div className="border-t border-slate-800 px-3 sm:px-4 py-3">
+        <div className="border-t border-surface-border px-3 sm:px-4 py-3">
           <TriageChips visible={showTriageChips} disabled={sending} onSelect={(id) => setInput(id)} />
           {["patrimony", "transfers", "trust_registry", "entity_simulation"].includes(session.state) && (
             <DomainModuleEditor
@@ -819,7 +885,15 @@ export function ChatPage() {
               error={incomeError}
               showEditor={showIncomeEditor}
               sending={sending}
-              onToggleEditor={() => setShowIncomeEditor((v) => !v)}
+              onToggleEditor={() => {
+                setShowIncomeEditor((v) => {
+                  const next = !v;
+                  if (next) {
+                    void qc.invalidateQueries({ queryKey: ["incomes", sessionId, session.taxYear] });
+                  }
+                  return next;
+                });
+              }}
               onAddRow={addIncomeDraftRow}
               onUpdate={updateIncomeDraft}
               onSave={(r) => void saveIncomeRow(r)}

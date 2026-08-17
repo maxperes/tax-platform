@@ -35,10 +35,11 @@ export async function handleStepAdvance(h: HandlerContext): Promise<HandlerResul
       data: { state: next }
     });
     const skipCgNote =
-      next === "deductions" ? " Capital gains are skipped for your intake focus.\n\n" : "";
+      next === "deductions" ? "Capital gains are skipped for your intake focus.\n\n" : "";
     return {
       assistantText:
-        `Thanks — **derived taxable events** confirmed.${skipCgNote}` + intakeRedirectForState(next, h.ctx)
+        `Thanks — that income classification looks right.\n\n${skipCgNote}` +
+        intakeRedirectForState(next, h.ctx)
     };
   }
 

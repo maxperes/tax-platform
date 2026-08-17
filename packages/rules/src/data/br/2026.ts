@@ -23,7 +23,11 @@ export const BR_DATA_PACK_META: DataPackMeta = {
   notes: "Monthly/annual tables use RFB 2024-style values until CY2026 tables are published."
 };
 
-/** IRPF-style monthly progressive (same structure as Carnê-Leão monthly base). */
+/**
+ * IRPF-style monthly progressive used by legacy carnê-leão engine.
+ * BR-IRPF-EXT-001 uses vigência-dated table in
+ * `legal/matriz/tables/br-irpf-mensal-2025-05.ts` — migrate callers when SME signs off.
+ */
 export const BR_IRPF_MONTHLY_2026: ProgressiveRow[] = [
   { upperBound: 2259.2, rate: 0, deduction: 0 },
   { upperBound: 2826.65, rate: 0.075, deduction: 169.44 },

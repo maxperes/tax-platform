@@ -19,6 +19,7 @@ describe("resolveBrlFromIncome", () => {
       originalCurrency: "USD"
     });
     expect(fx.requiresAdditionalReview).toBe(true);
+    expect(fx.amountBrl).toBe(0);
     expect(fx.notes).toMatch(/Missing exchangeRateToBrl/);
   });
 
@@ -41,6 +42,17 @@ describe("resolveBrlFromIncome", () => {
     expect(fx.exchangeRate).toBe(1);
     expect(fx.requiresAdditionalReview).toBe(false);
   });
+
+  it("does not copy PEN (or other non-PTAX currencies) 1:1 into BRL", () => {
+    const fx = resolveBrlFromIncome({
+      grossAmount: 10900,
+      originalCurrency: "PEN",
+      paymentDate: "2026-01-31"
+    });
+    expect(fx.amountBrl).toBe(0);
+    expect(fx.requiresAdditionalReview).toBe(true);
+  });
+
 });
 
 describe("resolveUsdFromIncome", () => {
@@ -50,14 +62,27 @@ describe("resolveUsdFromIncome", () => {
       originalCurrency: "BRL"
     });
     expect(fx.requiresAdditionalReview).toBe(true);
+    expect(fx.amountUsd).toBe(0);
   });
 
   it("passes through USD amounts", () => {
     const fx = resolveUsdFromIncome({
       grossAmount: 3000,
-      originalCurrency: "USD"
+      originalCurrency: "usd"
     });
     expect(fx.amountUsd).toBe(3000);
     expect(fx.requiresAdditionalReview).toBe(false);
+  });
+
+  it("crosses a BRL rate into USD via PTAX", () => {
+    const fx = resolveUsdFromIncome({
+      grossAmount: 10900,
+      originalCurrency: "PEN",
+      exchangeRateToBrl: 1.55,
+      paymentDate: "2026-01-31"
+    });
+    expect(fx.requiresAdditionalReview).toBe(false);
+    expect(fx.amountUsd).toBeGreaterThan(0);
+    expect(fx.notes).toMatch(/Via BRL/);
   });
 });

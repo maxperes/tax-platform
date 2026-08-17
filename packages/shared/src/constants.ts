@@ -1,9 +1,12 @@
 /** Engine semver; bump when calculation algorithms change. */
-export const ENGINE_VERSION = "1.1.0";
+export const ENGINE_VERSION = "1.2.0";
 
 /** Data pack ids (per jurisdiction/year); bump when statutory tables change. */
 export const DATA_PACK_BR_2026 = "br-2026-1";
 export const DATA_PACK_US_2026 = "us-2026-1";
+
+/** Legal rule pack id for Impact Assessment cite-backed conclusions. */
+export const LEGAL_RULE_PACK_BR_2026 = "legal-br-2026-1";
 
 /** Full stamp persisted on calculations/reports: engine + data pack id (e.g. br-2026-1). */
 export function buildRuleVersionStamp(dataPackId: string, overrideFingerprint?: string): string {

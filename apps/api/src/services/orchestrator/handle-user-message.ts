@@ -1,11 +1,15 @@
 import type { ConversationState } from "@tax-platform/shared";
 import { prisma } from "../../db.js";
+import type { LlmStreamEvent } from "../llm.js";
 import { handleAdvanceIntent } from "./handlers/advance-intent.js";
 import { handleChatIncomeAmendment } from "./handlers/chat-income-amendment.js";
 import { handleFiscalClarify } from "./handlers/fiscal-clarify.js";
 import { handleFiscalConfirm } from "./handlers/fiscal-confirm.js";
+import { handleFiscalFieldAnswer } from "./handlers/fiscal-field-answer.js";
 import { handleHelp } from "./handlers/help.js";
+import { handleAssetScreen } from "./handlers/asset-screen.js";
 import { handleIncomeDone } from "./handlers/income-done.js";
+import { handleIncomeFx } from "./handlers/income-fx.js";
 import { handleOffTopic } from "./handlers/off-topic.js";
 import { handleReportFinalize } from "./handlers/report-finalize.js";
 import { handleRewind } from "./handlers/rewind.js";
@@ -22,9 +26,9 @@ import {
   type HandlerResult
 } from "./session-context.js";
 
-type HandlerFn = (h: HandlerContext) => Promise<HandlerResult>;
+type HandlerFnLocal = (h: HandlerContext) => Promise<HandlerResult>;
 
-const HANDLER_PIPELINE: HandlerFn[] = [
+const HANDLER_PIPELINE: HandlerFnLocal[] = [
   handleTrust,
   handleHelp,
   handleTriageClarify,
@@ -33,15 +37,26 @@ const HANDLER_PIPELINE: HandlerFn[] = [
   handleUsFiling,
   handleFiscalConfirm,
   handleRewind,
+  handleAssetScreen,
+  handleIncomeFx,
   handleIncomeDone,
   handleStepAdvance,
   handleReportFinalize,
   handleAdvanceIntent,
+  handleFiscalFieldAnswer,
   handleOffTopic,
   handleChatIncomeAmendment
 ];
 
-export async function handleUserMessage(sessionId: string, userContent: string): Promise<{
+export type OrchestratorStreamEvent =
+  | LlmStreamEvent
+  | { type: "status"; message: string };
+
+export async function handleUserMessage(
+  sessionId: string,
+  userContent: string,
+  onEvent?: (ev: OrchestratorStreamEvent) => void
+): Promise<{
   assistantText: string;
   sessionState: ConversationState;
 }> {
@@ -54,9 +69,10 @@ export async function handleUserMessage(sessionId: string, userContent: string):
 
   const messages = await prisma.conversationMessage.findMany({
     where: { sessionId },
-    orderBy: { createdAt: "asc" },
+    orderBy: { createdAt: "desc" },
     take: 40
   });
+  messages.reverse();
 
   const handlerCtx: HandlerContext = {
     sessionId,
@@ -76,10 +92,14 @@ export async function handleUserMessage(sessionId: string, userContent: string):
   for (const handler of HANDLER_PIPELINE) {
     const result = await handler(handlerCtx);
     if (result) {
+      if (onEvent) {
+        onEvent({ type: "delta", text: result.assistantText });
+      }
       return replyAndReturn(sessionId, result.assistantText, false);
     }
   }
 
-  const assistantText = await runLlmTurn(handlerCtx);
+  onEvent?.({ type: "status", message: "assistant_thinking" });
+  const assistantText = await runLlmTurn(handlerCtx, onEvent);
   return replyAndReturn(sessionId, assistantText, true);
 }

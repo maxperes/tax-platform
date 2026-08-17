@@ -77,7 +77,7 @@ export async function handleChatIncomeAmendment(h: HandlerContext): Promise<Hand
       "\n\nPlease confirm employer or payer names if needed, or describe another income type.";
     if ((h.session.state as ConversationState) === "complete") {
       assistantText +=
-        "\n\nTo refresh your **TaxReport** download and tax estimates, say **regenerate the report** (or **generate a new summary**).";
+        "\n\nTo refresh the report, say **regenerate the report**.";
     }
   }
   return { assistantText };

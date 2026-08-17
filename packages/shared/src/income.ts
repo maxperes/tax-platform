@@ -10,6 +10,37 @@ export const incomeNatureSchema = z.enum([
   "other"
 ]);
 
+/** Catalog labels for Impact Assessment Twin income lines (free-text incomeType may still be used). */
+export const IMPACT_INCOME_CATEGORIES = [
+  "salary",
+  "business",
+  "consulting",
+  "dividends",
+  "stock_options",
+  "rsu",
+  "espp",
+  "royalties",
+  "rental",
+  "airbnb",
+  "interest",
+  "pension",
+  "social_security",
+  "military_pension",
+  "401k",
+  "ira",
+  "roth_ira",
+  "annuity",
+  "trust_distribution",
+  "capital_gain",
+  "crypto",
+  "staking",
+  "nft",
+  "yield_farming",
+  "other"
+] as const;
+
+export type ImpactIncomeCategory = (typeof IMPACT_INCOME_CATEGORIES)[number];
+
 export const incomeClassificationSchema = z.object({
   origin: z.enum(["brazil", "foreign", "mixed", "unknown"]),
   nature: z.string().min(1),

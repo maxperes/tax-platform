@@ -17,11 +17,12 @@ import {
   prepareFiscalPayloadForValidation
 } from "../fiscal-intake.js";
 import {
-  describeModulePlanForUser,
+  defaultUsFilingInputs,
+  inferredUsFilingStatus,
   isTriagePending,
-  loadIntakeModulePlan,
   triagePromptText,
-  usFilingPromptText
+  usFilingPromptText,
+  usFilingStatusLabel
 } from "../intake-helpers.js";
 export const FISCAL_PROFILE_CONFIRM_PENDING_KEY = "_fiscalProfileConfirmPending";
 
@@ -34,6 +35,21 @@ export function describeFiscalProfileForRecap(raw: string): string {
     undetermined: "Residency profile still undetermined from the answers we have"
   };
   return labels[raw] ?? raw.replace(/_/g, " ");
+}
+
+export function fiscalProfileSavedLead(input: {
+  taxYear: number;
+  profile: string;
+  requiresAdditionalReview: boolean;
+  fullName?: string;
+}): string {
+  const name = input.fullName?.trim();
+  const thanks = name ? `Thanks, **${name}**. ` : "Thanks — ";
+  const label = describeFiscalProfileForRecap(input.profile);
+  const review = input.requiresAdditionalReview
+    ? " Because more than one country may treat you as resident, we will flag this for a specialist — you can still continue."
+    : "";
+  return `${thanks}Your fiscal profile for **${input.taxYear}** is saved as **${label}**.${review}`;
 }
 
 export type FiscalCompleteResult = {
@@ -100,7 +116,7 @@ export function getFiscalResidenceMergedFields(context: Record<string, unknown>)
 }
 
 export function fiscalProfileConfirmPromptText(): string {
-  return "Reply **yes** to use this saved profile and continue to income, or **no** to replace it and answer the fiscal questions again from the start.";
+  return "Reply **yes** to use this saved profile and continue toward your 360° map, or **no** to replace it and answer the questions again from the start.";
 }
 
 export function isFiscalProfileConfirmPending(context: Record<string, unknown>): boolean {
@@ -168,6 +184,7 @@ export function isConfirmReplaceFiscalProfile(text: string): boolean {
 export function stripFiscalProfileConfirmFlag(context: Record<string, unknown>): Record<string, unknown> {
   const next = { ...context };
   delete next[FISCAL_PROFILE_CONFIRM_PENDING_KEY];
+  delete next._triagePending;
   return next;
 }
 
@@ -179,9 +196,39 @@ export function getFiscalResidenceCurrentQuestion(context: Record<string, unknow
     return triagePromptText();
   }
   if (context._usFilingPending === true) {
-    return usFilingPromptText();
+    return usFilingPromptText(context);
   }
   return getFiscalQuestionForContext(getFiscalResidenceMergedFields(context));
+}
+
+/** Field the assistant is currently asking — last asked, else inferred, else first pending. */
+export function resolveFiscalFieldBeingAsked(
+  context: Record<string, unknown>,
+  lastAssistantText?: string
+): string | undefined {
+  const merged = getFiscalResidenceMergedFields(context);
+  const pending = getActiveFiscalFieldOrder(merged).filter(
+    (f) => !isValidFiscalFieldValue(f.key, merged[f.key])
+  );
+  if (pending.length === 0) return undefined;
+  const pendingKeys = pending.map((f) => f.key);
+  const lastAsked = context._lastAskedKey;
+  if (typeof lastAsked === "string" && pendingKeys.includes(lastAsked)) return lastAsked;
+  if (lastAssistantText) {
+    const inferred = inferFiscalFieldFromAssistantText(lastAssistantText, pendingKeys);
+    if (inferred) return inferred;
+  }
+  return pending[0]!.key;
+}
+
+export function getFiscalPromptForAskedField(
+  context: Record<string, unknown>,
+  lastAssistantText?: string
+): string {
+  const key = resolveFiscalFieldBeingAsked(context, lastAssistantText);
+  const merged = getFiscalResidenceMergedFields(context);
+  const def = key ? getActiveFiscalFieldOrder(merged).find((f) => f.key === key) : undefined;
+  return def?.prompt ?? getFiscalQuestionForContext(merged);
 }
 
 /** If the assistant message asks about a pending fiscal field, persist it as _lastAskedKey. */
@@ -229,6 +276,11 @@ export function resolveFiscalFieldForUserAnswer(
     const fromAssistant = inferFiscalFieldFromAssistantText(lastAssistantText, pendingKeys);
     if (fromAssistant && looksLikeFiscalFieldAnswer(fromAssistant, t)) {
       return fromAssistant;
+    }
+    const allKeys = getActiveFiscalFieldOrder(merged).map((f) => f.key);
+    const asked = inferFiscalFieldFromAssistantText(lastAssistantText, allKeys);
+    if (asked && looksLikeFiscalFieldAnswer(asked, t)) {
+      return asked;
     }
   }
 
@@ -291,8 +343,21 @@ export async function completeFiscalProfileAndDetermineNext(
     intakeGoal: existingCtx.intakeGoal
   };
   delete ctx._lastAskedKey;
+  delete ctx[FISCAL_PROFILE_CONFIRM_PENDING_KEY];
+  delete ctx._triagePending;
+  delete ctx._assetScreenPending;
   const needsUs = profile.profile === "resident_usa" || profile.profile === "dual_residence";
   if (needsUs && !ctx.usFilingInputs) {
+    const inferred = inferredUsFilingStatus(ctx);
+    if (inferred) {
+      ctx.usFilingInputs = defaultUsFilingInputs(inferred);
+      delete ctx._usFilingPending;
+      return {
+        context: ctx,
+        state: "income_capture",
+        requiresAdditionalReview: profile.requiresAdditionalReview
+      };
+    }
     ctx._usFilingPending = true;
     return { context: ctx, state: "fiscal_residence", requiresAdditionalReview: profile.requiresAdditionalReview };
   }
@@ -305,9 +370,14 @@ export async function tryCompleteFiscalResidenceFromContext(
   taxYear: number,
   ctx: Record<string, unknown>
 ): Promise<FiscalCompleteResult | null> {
-  const merged = prepareFiscalPayloadForValidation(getFiscalResidenceMergedFields(ctx));
-  for (const { key } of getActiveFiscalFieldOrder(merged)) {
-    if (!isValidFiscalFieldValue(key, merged[key])) return null;
+  const rawMerged = getFiscalResidenceMergedFields(ctx);
+  for (const { key } of getActiveFiscalFieldOrder(rawMerged)) {
+    if (!isValidFiscalFieldValue(key, rawMerged[key])) return null;
+  }
+  const merged = prepareFiscalPayloadForValidation(rawMerged);
+  if (typeof merged.email !== "string" || !merged.email) {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+    if (user?.email) merged.email = user.email;
   }
   const parsed = fiscalResidenceSchema.safeParse(merged);
   if (!parsed.success) return null;
@@ -318,6 +388,7 @@ export async function templateFiscalResidence(
   sessionId: string,
   session: { userId: string; taxYear: number; contextJson: Prisma.JsonValue | null },
   userContent: string,
+  lastAssistantText: string | undefined,
   resolveIntakeRedirect: (
     state: ConversationState,
     context: Record<string, unknown>,
@@ -328,7 +399,7 @@ export async function templateFiscalResidence(
   const c = { ...(session.contextJson as Record<string, unknown>) ?? {} };
   const mergedBefore = getFiscalResidenceMergedFields(c);
   const order = getActiveFiscalFieldOrder(mergedBefore);
-  const fieldKey = resolveFiscalFieldForUserAnswer(c, userContent);
+  const fieldKey = resolveFiscalFieldForUserAnswer(c, userContent, lastAssistantText);
   if (!fieldKey) {
     return `${getFiscalQuestionForContext(mergedBefore)}\n\nPlease answer in the format requested above.`;
   }
@@ -347,6 +418,13 @@ export async function templateFiscalResidence(
   }
 
   const forValidation = prepareFiscalPayloadForValidation(merged);
+  if (typeof forValidation.email !== "string" || !forValidation.email) {
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { email: true }
+    });
+    if (user?.email) forValidation.email = user.email;
+  }
   const parsed = fiscalResidenceSchema.safeParse(forValidation);
   if (!parsed.success) {
     c._lastAskedKey = order[0]!.key;
@@ -358,7 +436,6 @@ export async function templateFiscalResidence(
   }
 
   const result = await completeFiscalProfileAndDetermineNext(session.userId, session.taxYear, parsed.data, c);
-  const plan = await loadIntakeModulePlan(session.userId, session.taxYear, result.context);
   await prisma.conversationSession.update({
     where: { id: sessionId },
     data: {
@@ -369,14 +446,19 @@ export async function templateFiscalResidence(
   });
 
   const profile = deriveFiscalProfile(parsed.data);
-  let tail = "";
-  if (result.state === "fiscal_residence" && result.context._usFilingPending === true) {
-    tail = usFilingPromptText();
-  } else {
-    tail = await resolveIntakeRedirect("income_capture", result.context, session.userId, session.taxYear);
-  }
-  return (
-    `Thanks, I saved your fiscal profile as **${profile.profile}**. ${profile.requiresAdditionalReview ? "This case may need expert review. " : ""}` +
-    `${describeModulePlanForUser(plan)}\n\n${tail}`
-  );
+  const tail =
+    result.state === "fiscal_residence" && result.context._usFilingPending === true
+      ? usFilingPromptText(result.context)
+      : await resolveIntakeRedirect("income_capture", result.context, session.userId, session.taxYear);
+  const us = result.context.usFilingInputs as { filingStatus?: string } | undefined;
+  const inferredNote =
+    result.state === "income_capture" && (us?.filingStatus === "single" || us?.filingStatus === "mfj" || us?.filingStatus === "hoh")
+      ? `We'll use **${usFilingStatusLabel(us.filingStatus)}** for the US estimate.\n\n`
+      : "";
+  return `${fiscalProfileSavedLead({
+    taxYear: session.taxYear,
+    profile: profile.profile,
+    requiresAdditionalReview: profile.requiresAdditionalReview,
+    fullName: parsed.data.fullName
+  })}\n\n${inferredNote}${tail}`;
 }

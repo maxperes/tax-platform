@@ -12,7 +12,7 @@ export function convertForeignTaxToBrl(
   }
   const ptax = lookupPtaxToBrl(currency, paymentDate);
   if (ptax !== undefined) return { amountBrl: amount * ptax, requiresReview: false };
-  return { amountBrl: amount, requiresReview: true };
+  return { amountBrl: 0, requiresReview: true };
 }
 
 export function convertForeignTaxToUsd(
@@ -27,7 +27,7 @@ export function convertForeignTaxToUsd(
   }
   const ptax = lookupPtaxToUsd(currency, paymentDate);
   if (ptax !== undefined) return { amountUsd: amount * ptax, requiresReview: false };
-  return { amountUsd: amount, requiresReview: true };
+  return { amountUsd: 0, requiresReview: true };
 }
 
 /** Credit limited to tax attributable to the same income (simplified FTC). */

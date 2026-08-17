@@ -13,7 +13,8 @@
   },
   "scripts": {
     "build": "tsc --build --force",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "test": "vitest run"
   },
   "dependencies": {
     "zod": "^3.24.1"

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   includesInOrdinaryAnnual,
+  includesInUsOrdinaryAnnual,
   isCarnetLeaoLine,
   isExcludedFromOrdinaryAnnual,
   isLei14754Eligible
@@ -29,5 +30,12 @@ describe("income routing by calculationModule", () => {
   it("identifies carnet and lei14754 flags", () => {
     expect(isCarnetLeaoLine({ calculationModule: "carnet_leao" })).toBe(true);
     expect(isLei14754Eligible({ lei14754ForeignProfitsEligible: true })).toBe(true);
+  });
+
+  it("includes carnet_leao in US ordinary annual but not Brazil annual", () => {
+    const carnet = { calculationModule: "carnet_leao", taxTreatment: "taxable", ftcBasket: "general" as const };
+    expect(includesInOrdinaryAnnual(carnet)).toBe(false);
+    expect(includesInUsOrdinaryAnnual(carnet)).toBe(true);
+    expect(includesInUsOrdinaryAnnual({ calculationModule: "trust_offshore", taxTreatment: "complex" })).toBe(false);
   });
 });

@@ -1,4 +1,12 @@
 import type { ConversationState, FiscalProfile } from "@tax-platform/shared";
+import {
+  classifyIncome,
+  includesInOrdinaryAnnual,
+  includesInUsOrdinaryAnnual,
+  jurisdictionsForProfile,
+  resolveBrlFromIncome,
+  resolveUsdFromIncome
+} from "@tax-platform/rules";
 import { prisma } from "../db.js";
 import { syncTaxableEvents, recomputeMonthlyTax } from "./tax-pipeline.js";
 
@@ -16,6 +24,45 @@ export type UsFilingInputs = {
   foreignEarnedIncomeUsd?: number;
   netInvestmentIncomeUsd?: number;
 };
+
+const US_FILING_STATUS_LABELS: Record<UsFilingInputs["filingStatus"], string> = {
+  single: "single",
+  mfj: "married filing jointly",
+  hoh: "head of household"
+};
+
+export function usFilingStatusLabel(status: UsFilingInputs["filingStatus"]): string {
+  return US_FILING_STATUS_LABELS[status];
+}
+
+function maritalStatusOf(context?: Record<string, unknown>): string | undefined {
+  if (!context) return undefined;
+  const nested = context.fiscalResidence;
+  const fromNested =
+    nested && typeof nested === "object" && !Array.isArray(nested)
+      ? (nested as Record<string, unknown>).maritalStatus
+      : undefined;
+  const raw = context.maritalStatus ?? fromNested;
+  return typeof raw === "string" && raw.trim() && raw !== "not_sure" ? raw.trim() : undefined;
+}
+
+/** When marital status already implies a US filing status, skip the extra question. */
+export function inferredUsFilingStatus(
+  context?: Record<string, unknown>
+): UsFilingInputs["filingStatus"] | undefined {
+  const marital = maritalStatusOf(context);
+  if (marital === "single" || marital === "divorced" || marital === "widowed") return "single";
+  return undefined;
+}
+
+export function defaultUsFilingInputs(status: UsFilingInputs["filingStatus"]): UsFilingInputs {
+  return { filingStatus: status, foreignEarnedIncomeUsd: 0, netInvestmentIncomeUsd: 0 };
+}
+
+function isMarriedForUsFiling(context?: Record<string, unknown>): boolean {
+  const marital = maritalStatusOf(context);
+  return marital === "married" || marital === "stable_union";
+}
 
 export type IntakeModulePlan = {
   derivedProfile: FiscalProfile | string;
@@ -79,7 +126,10 @@ export async function loadIntakeModulePlan(
 }
 
 export function describeModulePlanForUser(plan: IntakeModulePlan): string {
-  const lines: string[] = ["**What applies to your profile:**"];
+  const lines: string[] = [
+    "**What applies to your profile:**",
+    "- After residency and income (and a short asset screen), you can open the **360° tax map** — the same view as the interview."
+  ];
   if (plan.derivedProfile === "dual_residence") {
     lines.push("- **Dual residence** — Brazil Carnê-Leão (foreign income) and US annual estimate both in scope.");
   } else if (plan.derivedProfile === "resident_brazil") {
@@ -104,14 +154,19 @@ export function describeModulePlanForUser(plan: IntakeModulePlan): string {
 
 export function triagePromptText(): string {
   return (
-    "Before we collect income, what do you want help with this year?\n\n" +
-    INTAKE_GOAL_OPTIONS.map((o) => `- **${o.id}** — ${o.label}`).join("\n") +
-    "\n\nReply with one option (e.g. **foreign_salary** or **full_annual**)."
+    "Every path builds the same **360° tax map**. What should we focus on first this year?\n\n" +
+    INTAKE_GOAL_OPTIONS.map((o, i) => `${i + 1}. ${o.label}`).join("\n") +
+    "\n\nReply with **1**, **2**, **3**, or **4**."
   );
 }
 
 export function parseIntakeGoal(text: string): IntakeGoal | undefined {
-  const lower = text.trim().toLowerCase().replace(/\s+/g, "_");
+  const trimmed = text.trim();
+  const numbered = trimmed.match(/^(?:option\s+)?([1-4])(?:[.)](?:\s|$)|$)/i);
+  if (numbered) {
+    return INTAKE_GOAL_OPTIONS[Number(numbered[1]) - 1]!.id;
+  }
+  const lower = trimmed.toLowerCase().replace(/\s+/g, "_");
   for (const o of INTAKE_GOAL_OPTIONS) {
     if (lower === o.id || lower.includes(o.id.replace(/_/g, " "))) return o.id;
   }
@@ -131,27 +186,66 @@ export function isUsFilingPending(context: Record<string, unknown>, plan: Intake
   return context._usFilingPending === true && !context.usFilingInputs;
 }
 
-export function usFilingPromptText(): string {
+export function usFilingPromptText(context?: Record<string, unknown>): string {
+  if (isMarriedForUsFiling(context)) {
+    return (
+      "For a **US return**, will you file **jointly with your spouse**?\n\n" +
+      "Reply **yes**, **no**, or **not sure**."
+    );
+  }
   return (
-    "For the **US annual estimate**, what is your **filing status**? Reply with one of: **single**, **mfj** (married filing jointly), **hoh** (head of household).\n\n" +
-    "Optional on the same line: **FEIE** amount in USD and **net investment income** in USD (e.g. `single, FEIE 0, NII 0`)."
+    "For a **US return**, how do you usually file?\n\n" +
+    "1. Single\n" +
+    "2. Married, jointly with my spouse\n" +
+    "3. Head of household\n" +
+    "4. Not sure\n\n" +
+    "Reply with **1–4**."
   );
 }
 
-export function parseUsFilingInputs(text: string): UsFilingInputs | undefined {
+function parseUsdAmountAfterLabel(text: string, label: "feie" | "nii"): number | undefined {
+  const re = new RegExp(`\\b${label}\\s*[:=]?\\s*(\\d+(?:\\.\\d+)?)\\s*(k\\b)?`, "i");
+  const match = re.exec(text);
+  if (!match) return undefined;
+  const n = Number(match[1]);
+  if (!Number.isFinite(n)) return undefined;
+  return match[2] ? n * 1000 : n;
+}
+
+export function parseUsFilingInputs(
+  text: string,
+  context?: Record<string, unknown>
+): UsFilingInputs | undefined {
   const lower = text.trim().toLowerCase();
+  const amounts = {
+    foreignEarnedIncomeUsd: parseUsdAmountAfterLabel(text, "feie") ?? 0,
+    netInvestmentIncomeUsd: parseUsdAmountAfterLabel(text, "nii") ?? 0
+  };
+  const withStatus = (filingStatus: UsFilingInputs["filingStatus"]): UsFilingInputs => ({
+    filingStatus,
+    ...amounts
+  });
+
+  if (/^(not[_\s-]?sure|unsure|unknown|idk)$/i.test(lower)) return withStatus("single");
+
+  if (isMarriedForUsFiling(context)) {
+    if (/^(yes|y|true|sim)\b/i.test(lower) || /\bjoint(ly)?\b/i.test(lower)) return withStatus("mfj");
+    if (/^(no|n|false|nao|não)\b/i.test(lower) || /\bseparat/i.test(lower)) return withStatus("single");
+  }
+
   let filingStatus: UsFilingInputs["filingStatus"] | undefined;
-  if (/\b(mfj|married\s+filing\s+jointly)\b/i.test(lower)) filingStatus = "mfj";
+  if (/\b(mfj|married(\s+filing\s+jointly)?|joint)\b/i.test(lower)) filingStatus = "mfj";
   else if (/\b(hoh|head\s+of\s+household)\b/i.test(lower)) filingStatus = "hoh";
   else if (/\bsingle\b/i.test(lower)) filingStatus = "single";
+  else {
+    const numbered = /^(?:option\s+)?([1-4])[.)]?$/i.exec(lower.trim());
+    if (numbered?.[1] === "1") filingStatus = "single";
+    else if (numbered?.[1] === "2") filingStatus = "mfj";
+    else if (numbered?.[1] === "3") filingStatus = "hoh";
+    else if (numbered?.[1] === "4") filingStatus = "single";
+  }
   if (!filingStatus) return undefined;
-  const feieMatch = /\bfeie\s*[:=]?\s*(\d+(?:\.\d+)?)/i.exec(text);
-  const niiMatch = /\bnii\s*[:=]?\s*(\d+(?:\.\d+)?)/i.exec(text);
-  return {
-    filingStatus,
-    foreignEarnedIncomeUsd: feieMatch ? Number(feieMatch[1]) : 0,
-    netInvestmentIncomeUsd: niiMatch ? Number(niiMatch[1]) : 0
-  };
+  return withStatus(filingStatus);
 }
 
 export type IncomeGap = {
@@ -166,37 +260,83 @@ export async function resolveIncomeGaps(userId: string, taxYear: number): Promis
   hasBlockingGaps: boolean;
   summaryText: string;
 }> {
+  const fp = await prisma.fiscalResidenceProfile.findUnique({
+    where: { userId_taxYear: { userId, taxYear } }
+  });
+  const profile = (fp?.derivedProfile ?? "undetermined") as FiscalProfile;
+  const jurs = jurisdictionsForProfile(profile);
   const rows = await prisma.incomeSource.findMany({
     where: { userId, taxYear },
     select: {
       id: true,
       payerName: true,
+      originCountry: true,
       originalCurrency: true,
+      grossAmount: true,
       grossAmountBrl: true,
       exchangeRateToBrl: true,
       taxPaidOriginCountry: true,
       withholdingTax: true,
       nature: true,
       incomeType: true,
-      classification: true,
+      periodicity: true,
+      paymentDate: true,
       notes: true
     }
   });
 
   const gaps: IncomeGap[] = [];
   for (const row of rows) {
-    const cls = row.classification as { calculationModule?: string } | null;
-    const isCarnet = cls?.calculationModule === "carnet_leao";
+    const classified = classifyIncome(
+      {
+        payerName: row.payerName,
+        originCountry: row.originCountry,
+        incomeType: row.incomeType,
+        grossAmount: row.grossAmount.toNumber(),
+        originalCurrency: row.originalCurrency,
+        paymentDate: row.paymentDate.toISOString().slice(0, 10),
+        periodicity: row.periodicity as "monthly" | "annual" | "one_off" | "recurring",
+        nature: row.nature as "work" | "investment" | "retirement" | "asset" | "corporate" | "trust" | "other",
+        notes: row.notes ?? undefined,
+        exchangeRateToBrl: row.exchangeRateToBrl?.toNumber(),
+        grossAmountBrl: row.grossAmountBrl?.toNumber()
+      },
+      profile
+    );
+    const cls = classified.classification;
+    const isCarnet = cls.calculationModule === "carnet_leao";
     const cur = row.originalCurrency.toUpperCase();
+    const paymentDate = row.paymentDate.toISOString().slice(0, 10);
+    const brl = resolveBrlFromIncome({
+      grossAmount: row.grossAmount.toNumber(),
+      originalCurrency: row.originalCurrency,
+      grossAmountBrl: row.grossAmountBrl?.toNumber(),
+      exchangeRateToBrl: row.exchangeRateToBrl?.toNumber(),
+      paymentDate
+    });
+    const usd = resolveUsdFromIncome({
+      grossAmount: row.grossAmount.toNumber(),
+      originalCurrency: row.originalCurrency,
+      paymentDate,
+      grossAmountBrl: row.grossAmountBrl?.toNumber(),
+      exchangeRateToBrl: row.exchangeRateToBrl?.toNumber()
+    });
+    const needsBrl =
+      jurs.includes("BR") &&
+      brl.requiresAdditionalReview &&
+      (isCarnet || includesInOrdinaryAnnual(cls));
+    const needsUsd =
+      jurs.includes("US") && usd.requiresAdditionalReview && includesInUsOrdinaryAnnual(cls);
     const isGenericPayer = /^(unknown|employer|payer|income\s+source)$/i.test(row.payerName.trim());
     const isGenericType = /^(income|payment|salary)$/i.test(row.incomeType.trim()) && !row.notes;
 
-    if (isCarnet && cur !== "BRL" && row.grossAmountBrl == null && row.exchangeRateToBrl == null) {
+    if (needsBrl || needsUsd) {
+      const amount = row.grossAmount.toNumber();
       gaps.push({
         incomeId: row.id,
         payerName: row.payerName,
-        issue: "Missing BRL conversion (FX rate or gross amount in BRL)",
-        suggestion: `Add an FX rate (e.g. **5.32 BRL per USD**) or gross in BRL (e.g. **54500 BRL**) for **${row.payerName}** (${cur}).`
+        issue: "Missing exchange rate",
+        suggestion: `I cannot convert **${amount} ${cur}** automatically. Reply with a rate like **1.55 BRL per ${cur}**, or the gross in BRL (e.g. **16900 BRL**).`
       });
     }
     if (isCarnet && cur !== "BRL" && row.taxPaidOriginCountry == null && row.withholdingTax == null) {
@@ -225,7 +365,8 @@ export async function resolveIncomeGaps(userId: string, taxYear: number): Promis
     }
   }
 
-  const blocking = gaps.filter((g) => g.issue.includes("BRL conversion"));
+  // Preview estimates should not stall on a rate the user cannot know yet (future pay, no PTAX pair).
+  const blocking: IncomeGap[] = [];
   let summaryText = "";
   if (gaps.length > 0) {
     summaryText =
@@ -261,17 +402,16 @@ export async function eventsCheckpointMessage(userId: string, taxYear: number): 
   });
 
   const cta =
-    "These events are **derived from your income rows** (not typed separately). Say **looks correct** or **yes** to continue to capital gains, or **go back to income** to fix sources.\n\n" +
-    "_If something is wrong, update the income line — events will refresh on this step._";
+    "These lines come from your **income** — you do not type them separately. If the list looks right, say **looks correct** or **yes**. To change a source, say **go back to income**.";
 
   if (rows.length === 0) {
     return (
-      "**Review derived taxable events**\n\n" +
-      `No events were derived yet — add at least one income line first, or say **that's all** on the income step.\n\n${cta}`
+      "**Income classification**\n\n" +
+      `Nothing to classify yet — add at least one income line first, or say **that's all** on the income step.\n\n${cta}`
     );
   }
 
-  const header = `**Derived taxable events (${rows.length})** — confirm this classification.\n\n`;
+  const header = `**Income classification (${rows.length})** — does this look right?\n\n`;
   const table =
     `| # | Type | Taxable | Review | Amount | Date | Description |\n|---|------|---------|--------|--------|------|-------------|\n` +
     rows
@@ -297,20 +437,20 @@ export async function formatMonthlyTaxForRecap(userId: string, taxYear: number):
   });
 
   const cta =
-    "Review month-by-month **Carnê-Leão** totals. Say **looks correct** or **yes** to move to the report step, or describe what to fix in income.\n\n" +
-    "_Amounts are engine estimates — not filing instructions._";
+    "These are **monthly Brazilian tax estimates** on foreign income (Carnê-Leão). Say **looks correct** or **yes** to continue, or tell us what to fix in income.\n\n" +
+    "_Estimates only — not filing instructions._";
 
   if (rows.length === 0) {
     return (
-      "**Monthly Carnê-Leão review**\n\n" +
-      "No monthly snapshots apply (no foreign-income Carnê-Leão lines, or US-only profile). Say **next step** to continue to the report.\n\n" +
+      "**Monthly Brazilian tax on foreign income**\n\n" +
+      "No monthly estimates apply for this profile. Say **looks correct** or **next step** to continue to the report.\n\n" +
       cta
     );
   }
 
+  const header = `**Monthly Brazilian tax on foreign income (${rows.length} month(s))**\n\n`;
   let ytdDue = 0;
   let preliminaryMonths = 0;
-  const header = `**Monthly Carnê-Leão (${rows.length} month(s))**\n\n`;
   const table =
     `| Month | Taxable base (BRL) | Rate | Gross tax | Net due | Status |\n|-------|-------------------|------|-----------|---------|--------|\n` +
     rows
@@ -334,11 +474,12 @@ export async function formatMonthlyTaxForRecap(userId: string, taxYear: number):
 export function isEventsConfirmIntent(userContent: string): boolean {
   const lower = userContent.trim().toLowerCase();
   if (!lower) return false;
+  // Short confirmations only — do not match "continue" mid-sentence (e.g. "continue fixing income").
+  if (lower.length > 64) return false;
   return (
-    /^(yes|yep|yeah|ok|okay|correct|confirmed)\b/i.test(lower) ||
-    /\b(looks?\s+(good|correct|right|fine)|that['']?s\s+(correct|right|fine))\b/i.test(lower) ||
-    /^next(\s+step)?\b/i.test(lower) ||
-    /\b(confirm|proceed|continue)\b/i.test(lower)
+    /^(yes|yep|yeah|ok|okay|correct|confirmed)([.!]|\s|$)/i.test(lower) ||
+    /^(next(\s+step)?|proceed|continue)([.!]|\s*$)/i.test(lower) ||
+    /^(looks?\s+(good|correct|right|fine)|that['']?s\s+(correct|right|fine))([.!]|\s*$)/i.test(lower)
   );
 }
 
@@ -350,11 +491,12 @@ export function isDomainStepSkipIntent(userContent: string): boolean {
   const lower = userContent.trim().toLowerCase();
   if (!lower) return false;
   return (
-    /^no\b/i.test(lower) ||
-    /^none\b/i.test(lower) ||
+    /^(no|none|n\/a|skip)([.!]|\s*$)/i.test(lower) ||
+    /^skip(\s+this(\s+step)?)?\b/i.test(lower) ||
+    /^none(\s+(to\s+)?(add|report))?\b/i.test(lower) ||
+    /^(no|none)\s+(for\s+)?(this|now)\b/i.test(lower) ||
     /\bnothing\s+to\s+(add|report)\b/i.test(lower) ||
-    /\b(skip|no)\b/i.test(lower) ||
-    /\bdon['']?t\s+have\b/i.test(lower)
+    /\bdon['']?t\s+have(\s+(any|one|those))?([.!]|\s*$)/i.test(lower)
   );
 }
 

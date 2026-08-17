@@ -3,6 +3,7 @@ import {
   defaultOriginCountryForCurrency,
   inferIncomeKindFromChat,
   inferPayerNameFromIncomeChatLine,
+  parseFxConversionReply,
   parseMonthlySalaryLines,
   parsePaymentLines
 } from "./income-multi-parse.js";
@@ -45,6 +46,32 @@ describe("parsePaymentLines", () => {
       )
     ).toEqual([{ grossAmount: 10900, originalCurrency: "USD", paymentDate: "2026-01-31" }]);
   });
+
+  it("does not treat the English word per as a currency", () => {
+    expect(parsePaymentLines("10900 per 2026-01-31")).toEqual([]);
+  });
+});
+
+describe("parseFxConversionReply", () => {
+  it("parses BRL per foreign unit", () => {
+    expect(parseFxConversionReply("1.55 BRL per PEN")).toEqual({
+      kind: "rate",
+      rateToBrl: 1.55,
+      foreignCurrency: "PEN"
+    });
+  });
+
+  it("parses 1 CUR = x BRL", () => {
+    expect(parseFxConversionReply("1 USD = 5.32 BRL")).toEqual({
+      kind: "rate",
+      rateToBrl: 5.32,
+      foreignCurrency: "USD"
+    });
+  });
+
+  it("parses a BRL gross without a payment date", () => {
+    expect(parseFxConversionReply("16900 BRL")).toEqual({ kind: "gross_brl", amountBrl: 16900 });
+  });
 });
 
 describe("parseMonthlySalaryLines", () => {
@@ -57,6 +84,10 @@ describe("parseMonthlySalaryLines", () => {
         periodicity: "monthly"
       }
     ]);
+  });
+
+  it("does not treat per month as currency PER", () => {
+    expect(parseMonthlySalaryLines("10900 per month", 2026)).toEqual([]);
   });
 
   it("uses an explicit date when present", () => {
@@ -93,5 +124,6 @@ describe("defaultOriginCountryForCurrency", () => {
   it("maps common currencies", () => {
     expect(defaultOriginCountryForCurrency("brl")).toBe("BR");
     expect(defaultOriginCountryForCurrency("USD")).toBe("US");
+    expect(defaultOriginCountryForCurrency("GBP")).toBe("GB");
   });
 });

@@ -22,6 +22,21 @@ export function includesInOrdinaryAnnual(classification: IncomeClassificationLik
   return !isExcludedFromOrdinaryAnnual(classification);
 }
 
+/**
+ * US Form 1040 ordinary income: carnet_leao lines are still worldwide US income.
+ * Brazil annual IRPF keeps using includesInOrdinaryAnnual (excludes carnet_leao).
+ */
+export function includesInUsOrdinaryAnnual(
+  classification: IncomeClassificationLike | null | undefined
+): boolean {
+  const treatment = classification?.taxTreatment;
+  if (treatment === "exempt" || treatment === "non_taxable" || treatment === "complex") return false;
+  const module = classification?.calculationModule;
+  if (module === "capital_gain" || module === "trust_offshore") return false;
+  if (module === "asset_simulation" || module === "entity_simulation") return false;
+  return true;
+}
+
 export function isCarnetLeaoLine(classification: IncomeClassificationLike | null | undefined): boolean {
   return classification?.calculationModule === "carnet_leao";
 }

@@ -1,6 +1,27 @@
-# Tax Platform (V1)
+# Tax Platform — Tax Residency Impact Assessment
 
-Conversational tax intake (Brazil–US oriented) with a deterministic rules layer covering all RF-001–RF-017 manual workflows. See [documentation.md](./documentation.md) for requirements.
+Strategic **Tax Residency Impact Assessment** for families considering Brazilian tax residency—not a DIRPF filing product.
+
+The product answers: *If I become a Brazilian tax resident on date D, what changes in my financial, wealth, and tax life—and what can I do today to prepare?*
+
+## Product layers
+
+| Layer | Name | Purpose |
+|-------|------|---------|
+| 1 | **As Is** | Structured inventory of the family’s current tax posture (no recommendations) |
+| 2 | **To Be** | Simulate Brazilian tax residency from a hypothesis date |
+| 3 | **Planning** | Pre-move levers and action plan (Pro) |
+
+## Plan tiers
+
+| Tier | Access |
+|------|--------|
+| **Basic** | As Is + To Be (gross BR impact; no exemptions/credits/deductions applied); executive report sections 1–2; planning teaser |
+| **Pro** | Planning Engine, relief application, multi-scenario compare, continuous Twin refresh |
+
+Architecture: **Facts Engine** → **Legal Rules Engine** (cite-backed, reliability index) → **Planning Engine**. LLM extracts facts only; it never computes tax. See [documentation.md](./documentation.md) and [docs/tax-rules-governance.md](docs/tax-rules-governance.md).
+
+Legacy conversational RF-001–RF-017 intake remains available alongside the Impact Assessment flow.
 
 ## Prerequisites
 
@@ -50,10 +71,22 @@ Conversational tax intake (Brazil–US oriented) with a deterministic rules laye
 
 Database schema lives in [apps/api/prisma/schema.prisma](apps/api/prisma/schema.prisma).
 
+## Tax Residency Impact Assessment
+
+| Layer | API / UI |
+|-------|----------|
+| As Is (Twin) | `POST /api/twins/ensure`, `PUT /api/twins`, web `/impact` |
+| To Be + report | `POST /api/impact-assessments/run` |
+| Documents | `POST /api/documents/upload`, `POST /api/documents/:id/confirm` |
+| Planning (Pro) | Included in assessment `planningJson`; reliefs require `User.plan=pro` |
+| Normative monitor | `GET /api/normative-monitor/status` (scaffold) |
+
+Engines: Facts / Legal Rules / Planning in [`packages/rules/src/engines`](packages/rules/src/engines). Legal rule packs in [`packages/rules/src/legal`](packages/rules/src/legal).
+
 ## Tax calculation engine (BR + US, 2026)
 
 - **Where the math lives:** deterministic code in [`packages/rules`](packages/rules) — data tables in `src/data/br/2026.ts` and `src/data/us/2026.ts`, engines in `src/engines/`. The LLM does **not** compute taxes.
-- **Versioning:** `ENGINE_VERSION` is **1.1.0** in [`packages/shared/src/constants.ts`](packages/shared/src/constants.ts). Persisted on all calculations and reports via `ruleVersion` / `dataPackVersion`. See [docs/tax-rules-governance.md](docs/tax-rules-governance.md) for SME review and release process.
+- **Versioning:** `ENGINE_VERSION` is **1.2.0** in [`packages/shared/src/constants.ts`](packages/shared/src/constants.ts). Persisted on all calculations and reports via `ruleVersion` / `dataPackVersion`. See [docs/tax-rules-governance.md](docs/tax-rules-governance.md) for SME review and release process.
 - **Fiscal profile routing:** `resident_brazil` / `non_resident_brazil` / `undetermined` → BR estimates + Carnê-Leão monthly; `resident_usa` → US annual estimate; `dual_residence` → both (flagged for review).
 - **US capital gains:** 0/15/20% by holding period (long-term ≥ 365 days). Short-term flagged for review.
 - **Exemptions & deductions:** applied in annual and monthly Carnê-Leão paths.

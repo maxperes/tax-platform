@@ -16,14 +16,14 @@ export const STEP_ORDER = [
 export const WHY_HINT_BY_STATE: Record<string, string> = {
   fiscal_residence: "Why this matters: this determines your residency tax rules and filing scope.",
   income_capture: "Why this matters: income details drive taxable events and monthly tax estimates.",
-  events: "Why this matters: we confirm how your income rows classify as taxable events before continuing.",
-  deductions: "Why this matters: eligible deductions can reduce your final taxable base.",
-  capital_gain: "Why this matters: sale/acquisition details determine capital gain tax treatment.",
-  patrimony: "Why this matters: asset registry links to capital gains and wealth disclosure.",
-  transfers: "Why this matters: own-account transfers are not taxable; income receipts are.",
-  trust_registry: "Why this matters: trust type affects whether income is taxable to you.",
-  entity_simulation: "Why this matters: compare individual vs corporate tax scenarios.",
-  monthly_calc: "Why this matters: month-by-month Carnê-Leão estimates for foreign income (when applicable).",
+  events: "Why this matters: we confirm how your income is classified before continuing.",
+  deductions: "Why this matters: eligible deductions can reduce your taxable base.",
+  capital_gain: "Why this matters: selling stocks, a home, or crypto is taxed differently from salary. Say none if you did not sell anything.",
+  patrimony: "Why this matters: listing what you own helps with wealth reporting. You can skip this.",
+  transfers: "Why this matters: moving money to your own account is usually not extra tax.",
+  trust_registry: "Why this matters: a trust can change who is taxed. Say none if you do not have one.",
+  entity_simulation: "Why this matters: optional comparison of individual vs company tax. Skip if it does not apply.",
+  monthly_calc: "Why this matters: month-by-month Brazilian tax estimates on foreign income, when they apply.",
   report: "Why this matters: we assemble a complete summary for review and export.",
   complete: "Your intake is complete. You can now review or export your summary."
 };

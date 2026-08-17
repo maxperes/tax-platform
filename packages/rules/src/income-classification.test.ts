@@ -35,4 +35,18 @@ describe("classifyIncome", () => {
     );
     expect(result.classification.ftcBasket).toBe("passive");
   });
+
+  it("routes dual-residence foreign salary to carnet_leao with a US FTC basket", () => {
+    const result = classifyIncome(baseIncome, "dual_residence");
+    expect(result.classification.calculationModule).toBe("carnet_leao");
+    expect(result.classification.origin).toBe("foreign");
+    expect(result.classification.ftcBasket).toBe("general");
+  });
+
+  it("keeps dual-residence Brazil-source salary on IRPF with a US FTC basket", () => {
+    const result = classifyIncome({ ...baseIncome, originCountry: "BR", originalCurrency: "BRL" }, "dual_residence");
+    expect(result.classification.calculationModule).toBe("irpf");
+    expect(result.classification.origin).toBe("brazil");
+    expect(result.classification.ftcBasket).toBe("general");
+  });
 });

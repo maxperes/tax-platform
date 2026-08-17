@@ -18,6 +18,8 @@ export * from "./carne-leao-allocation.js";
 export * from "./progressive.js";
 export * from "./merge-rule-data.js";
 export * from "./engines/index.js";
+export * from "./legal/index.js";
+export * from "./normative-monitor.js";
 export { brRulePack2026, BR_DATA_PACK_ID, BR_DATA_PACK_META } from "./data/br/2026.js";
 export { usRulePack2026, US_DATA_PACK_ID, US_DATA_PACK_META } from "./data/us/2026.js";
 export type { DataPackMeta } from "./data/pack-meta.js";

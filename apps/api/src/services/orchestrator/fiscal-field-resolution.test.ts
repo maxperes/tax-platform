@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { inferFiscalFieldFromAssistantText } from "../fiscal-intake.js";
-import { isLikelyOffTopicUserMessage } from "./intents.js";
-import { resolveFiscalFieldForUserAnswer } from "./fiscal-orchestration.js";
+import { isFiscalClarificationQuestion, isLikelyOffTopicUserMessage } from "./intents.js";
+import {
+  resolveFiscalFieldBeingAsked,
+  resolveFiscalFieldForUserAnswer
+} from "./fiscal-orchestration.js";
+import { buildFiscalClarifyReply } from "./handlers/fiscal-clarify.js";
 
 const partialProfile = {
   _triagePending: false,
@@ -43,10 +47,28 @@ describe("resolveFiscalFieldForUserAnswer", () => {
     expect(key).toBe("fullName");
   });
 
-  it("uses _lastAskedKey for yes/no when multiple booleans are pending", () => {
-    const ctx = { ...partialProfile, _lastAskedKey: "isFiscalResidentUSA" };
-    const key = resolveFiscalFieldForUserAnswer(ctx, "yes");
-    expect(key).toBe("isFiscalResidentUSA");
+  it("accepts slash dates when assistant asked birth date", () => {
+    const assistant =
+      "What is your date of birth? Please use the format YYYY-MM-DD.";
+    expect(resolveFiscalFieldForUserAnswer(partialProfile, "01/01/1988", assistant)).toBe("birthDate");
+  });
+
+  it("treats a date as birth date even if that field is already filled", () => {
+    const assistant =
+      "It seems the date format is incorrect. Please provide your date of birth using the format YYYY-MM-DD (for example, 1988-01-01).";
+    const ctx = {
+      ...partialProfile,
+      physicallyLivesInBrazil: true,
+      daysInBrazilCalendarYear: 100,
+      isFiscalResidentUSA: false,
+      fiscalResidenceOtherCountry: false,
+      firstEntryBrazilDate: "not_sure",
+      immigrationStatus: "none",
+      hasCpf: true,
+      birthDate: "1988-01-01",
+      _lastAskedKey: "hasResidencePermit"
+    };
+    expect(resolveFiscalFieldForUserAnswer(ctx, "1988-01-01", assistant)).toBe("birthDate");
   });
 });
 
@@ -82,5 +104,68 @@ describe("isLikelyOffTopicUserMessage fiscal_residence", () => {
       "Are you a fiscal resident of the United States? (yes/no)"
     );
     expect(offTopic).toBe(true);
+  });
+
+  it("does not flag a corrected ISO date as off-topic after a format retry", () => {
+    const assistant =
+      "It seems the date format is incorrect. Please provide your date of birth using the format YYYY-MM-DD (for example, 1988-01-01).";
+    const offTopic = isLikelyOffTopicUserMessage(
+      "fiscal_residence",
+      {
+        ...partialProfile,
+        physicallyLivesInBrazil: true,
+        daysInBrazilCalendarYear: 100,
+        isFiscalResidentUSA: false,
+        fiscalResidenceOtherCountry: false,
+        hasCpf: true,
+        birthDate: "1988-01-01",
+        _lastAskedKey: "hasResidencePermit"
+      },
+      "1988-01-01",
+      assistant
+    );
+    expect(offTopic).toBe(false);
+  });
+
+  it("does not flag explain as off-topic", () => {
+    expect(isFiscalClarificationQuestion("explain")).toBe(true);
+    const offTopic = isLikelyOffTopicUserMessage(
+      "fiscal_residence",
+      { ...partialProfile, _lastAskedKey: "immigrationStatus" },
+      "explain",
+      "Now, do you have any immigration status in Brazil? (yes/no)"
+    );
+    expect(offTopic).toBe(false);
+  });
+});
+
+const coreAnswered = {
+  ...partialProfile,
+  physicallyLivesInBrazil: false,
+  daysInBrazilCalendarYear: 20,
+  isFiscalResidentUSA: false,
+  fiscalResidenceOtherCountry: false
+};
+
+describe("resolveFiscalFieldBeingAsked", () => {
+  it("prefers last asked immigration over first pending first-entry date", () => {
+    const key = resolveFiscalFieldBeingAsked(
+      { ...coreAnswered, _lastAskedKey: "immigrationStatus" },
+      "Now, do you have any immigration status in Brazil? (yes/no)"
+    );
+    expect(key).toBe("immigrationStatus");
+  });
+});
+
+describe("buildFiscalClarifyReply", () => {
+  it("explains immigration status instead of skipping to first entry", () => {
+    const text = buildFiscalClarifyReply(
+      { ...coreAnswered, _lastAskedKey: "immigrationStatus" },
+      "Now, do you have any immigration status in Brazil? (yes/no)"
+    );
+    expect(text).toMatch(/immigration category/i);
+    expect(text).toMatch(/tourist/i);
+    expect(text).not.toMatch(/keep this focused/i);
+    expect(text).not.toMatch(/first entry/i);
   });
 });

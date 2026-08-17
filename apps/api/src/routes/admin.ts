@@ -14,14 +14,8 @@ import {
 } from "../services/delete-user.js";
 import {
   isAllowedRuleOverrideKey,
-  loadRulePatches,
   RULE_OVERRIDE_KEYS
 } from "../services/rule-overrides.js";
-import {
-  estimateAnnualTax,
-  recomputeMonthlyTax,
-  syncTaxableEvents
-} from "../services/tax-pipeline.js";
 
 export const adminRouter = Router();
 
@@ -99,6 +93,7 @@ const userListSelect = {
   email: true,
   status: true,
   isAdmin: true,
+  plan: true,
   createdAt: true
 } as const;
 
@@ -156,7 +151,15 @@ adminRouter.patch(
   "/users/:id",
   requireAdminMiddleware,
   asyncHandler(async (req, res) => {
-    const body = z.object({ isAdmin: z.boolean() }).parse(req.body);
+    const body = z
+      .object({
+        isAdmin: z.boolean().optional(),
+        plan: z.enum(["basic", "pro"]).optional()
+      })
+      .refine((b) => b.isAdmin !== undefined || b.plan !== undefined, {
+        message: "Provide isAdmin and/or plan"
+      })
+      .parse(req.body);
     const existing = await prisma.user.findUnique({ where: { id: String(req.params.id) } });
     if (!existing) {
       res.status(404).json({ error: "User not found" });
@@ -164,7 +167,10 @@ adminRouter.patch(
     }
     const user = await prisma.user.update({
       where: { id: existing.id },
-      data: { isAdmin: body.isAdmin },
+      data: {
+        ...(body.isAdmin !== undefined ? { isAdmin: body.isAdmin } : {}),
+        ...(body.plan !== undefined ? { plan: body.plan } : {})
+      },
       select: userListSelect
     });
     res.json({ user });
@@ -250,30 +256,14 @@ adminRouter.delete(
   })
 );
 
-/** Recompute tax pipeline for every user with a session in the given tax year. */
+/** Recompute tax pipeline for every user with a session in the given tax year (async job). */
 adminRouter.post(
   "/rules/recompute-sessions",
   adminTokenRequiredMiddleware,
   asyncHandler(async (req, res) => {
     const { taxYear } = z.object({ taxYear: z.number().int() }).parse(req.body);
-    const sessions = await prisma.conversationSession.findMany({
-      where: { taxYear },
-      select: { userId: true },
-      distinct: ["userId"]
-    });
-    let recomputed = 0;
-    for (const { userId } of sessions) {
-      await syncTaxableEvents(userId, taxYear);
-      await recomputeMonthlyTax(userId, taxYear);
-      await estimateAnnualTax(userId, taxYear);
-      recomputed += 1;
-    }
-    const brPatches = await loadRulePatches("BR", taxYear);
-    const usPatches = await loadRulePatches("US", taxYear);
-    res.json({
-      taxYear,
-      usersRecomputed: recomputed,
-      overrideCounts: { BR: brPatches.length, US: usPatches.length }
-    });
+    const { enqueueJob, JOB_NAMES } = await import("../services/jobs/queue.js");
+    const { jobId, mode } = await enqueueJob(JOB_NAMES.recomputeSessions, { taxYear });
+    res.status(202).json({ jobId, mode, taxYear });
   })
 );

@@ -5,26 +5,32 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "dev:worker": "tsx watch src/worker.ts",
     "build": "prisma generate && tsc",
     "start": "node dist/index.js",
+    "start:worker": "node dist/worker.js",
     "lint": "eslint src",
     "test": "vitest run",
     "create-user": "tsx scripts/create-user.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1109.0",
     "@aws-sdk/rds-signer": "^3.758.0",
+    "@aws-sdk/s3-request-presigner": "^3.1109.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "7.8.0",
-    "pg": "^8.16.0",
     "@tax-platform/rules": "workspace:*",
     "@tax-platform/shared": "workspace:*",
     "bcryptjs": "^2.4.3",
+    "bullmq": "^6.1.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "helmet": "^8.0.0",
+    "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.2",
     "openai": "^4.80.0",
+    "pg": "^8.16.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {

@@ -9,8 +9,8 @@ type Props = {
 
 export function ChatInput({ input, sending, lastSavedAt, lastSavedSnippet, onInputChange, onSend }: Props) {
   return (
-    <footer className="border-t border-slate-800 px-4 py-4">
-      <div className="mb-2 text-xs text-slate-400">
+    <footer className="border-t border-surface-border px-4 py-4">
+      <div className="mb-2 text-xs text-navy-700/75">
         {sending
           ? "Saving your message..."
           : lastSavedAt
@@ -21,7 +21,7 @@ export function ChatInput({ input, sending, lastSavedAt, lastSavedSnippet, onInp
         <textarea
           id="chat-input"
           aria-label="Your answer"
-          className="flex-1 rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm min-h-[2.5rem] max-h-32 resize-y"
+          className="flex-1 rounded-lg bg-white border border-surface-border px-3 py-2 text-sm min-h-[2.5rem] max-h-32 resize-y"
           placeholder="Type your answer…"
           value={input}
           rows={1}
@@ -37,7 +37,7 @@ export function ChatInput({ input, sending, lastSavedAt, lastSavedSnippet, onInp
           type="button"
           disabled={sending}
           onClick={onSend}
-          className="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-sm font-medium disabled:opacity-50 self-end"
+          className="rounded-full bg-accent hover:bg-accent-dark px-4 py-2 text-sm font-medium text-white disabled:opacity-50 self-end"
         >
           Send
         </button>

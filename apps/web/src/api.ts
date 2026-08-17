@@ -18,6 +18,7 @@ export type UserProfile = {
   email: string;
   isAdmin: boolean;
   status: "pending" | "approved" | "rejected";
+  plan?: "basic" | "pro";
   createdAt: string;
 };
 
@@ -37,6 +38,7 @@ export type SessionListItem = {
   updatedAt: string;
 };
 
+/** Progressive SSE of the assistant reply (real token stream when LLM path runs). */
 export async function streamSessionMessage(
   sessionId: string,
   content: string,
@@ -69,7 +71,16 @@ export async function streamSessionMessage(
     buffer = lines.pop() ?? "";
     for (const line of lines) {
       if (!line.startsWith("data: ")) continue;
-      const payload = JSON.parse(line.slice(6)) as { delta?: string; done?: boolean; sessionState?: string };
+      const payload = JSON.parse(line.slice(6)) as {
+        delta?: string;
+        done?: boolean;
+        sessionState?: string;
+        error?: string;
+        status?: number;
+      };
+      if (payload.error) {
+        throw new Error(payload.error);
+      }
       if (payload.delta) onDelta(payload.delta);
       if (payload.done && payload.sessionState) sessionState = payload.sessionState;
     }
@@ -93,10 +104,23 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   };
   const res = await fetch(path, { ...init, headers });
   if (!res.ok) {
+    if (res.status === 401) {
+      signOut();
+      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+        window.location.assign("/login");
+      }
+    }
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { error?: string }).error || res.statusText);
   }
-  return res.json() as Promise<T>;
+  if (res.status === 204) {
+    return undefined as T;
+  }
+  const text = await res.text();
+  if (!text) {
+    return undefined as T;
+  }
+  return JSON.parse(text) as T;
 }
 
 export async function downloadAuthenticated(path: string, filename: string): Promise<void> {

@@ -18,6 +18,7 @@ export type FullTaxReport = {
       taxableBase?: number;
       netTaxDue?: number;
       calculationStatus?: string;
+      requiresAdditionalReview?: boolean;
     }>;
     monthlyCarnetLeao?: Array<{
       taxMonth?: string;
@@ -26,6 +27,7 @@ export type FullTaxReport = {
       calculationStatus?: string;
     }>;
     capitalGains?: Array<{ assetType?: string; gainAmount?: number | string; taxEstimate?: number | string }>;
+    unconvertedIncome?: Array<{ amount?: number; currency?: string; payerName?: string }>;
     estimatesDisclaimer?: string;
   };
 };

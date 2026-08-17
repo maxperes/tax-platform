@@ -26,6 +26,7 @@ import {
   sumDeductionsForScope,
   sumExemptionsForScope,
   includesInOrdinaryAnnual,
+  includesInUsOrdinaryAnnual,
   isCarnetLeaoLine,
   isLei14754Eligible,
   allocateMonthlyOffsets,
@@ -44,40 +45,68 @@ function dbClient(tx?: Prisma.TransactionClient): Db {
 
 const incomeRowBaseSchema = incomeSourceSchema.omit({ classification: true });
 
+function classifiedFromDbIncome(
+  row: {
+    payerName: string;
+    originCountry: string;
+    incomeType: string;
+    grossAmount: { toNumber: () => number };
+    originalCurrency: string;
+    paymentDate: Date;
+    periodicity: string;
+    taxPaidOriginCountry: { toNumber: () => number } | null;
+    withholdingTax: { toNumber: () => number } | null;
+    hasProofDocument: boolean | null;
+    destinationAccountHint: string | null;
+    transferredToBrazil: boolean | null;
+    remainedAbroad: boolean | null;
+    nature: string;
+    notes: string | null;
+    exchangeRateToBrl: { toNumber: () => number } | null;
+    grossAmountBrl: { toNumber: () => number } | null;
+  },
+  profile: FiscalProfile
+) {
+  const base = incomeRowBaseSchema.parse({
+    payerName: row.payerName,
+    originCountry: row.originCountry,
+    incomeType: row.incomeType,
+    grossAmount: row.grossAmount.toNumber(),
+    originalCurrency: row.originalCurrency,
+    paymentDate: row.paymentDate.toISOString().slice(0, 10),
+    periodicity: row.periodicity,
+    taxPaidOriginCountry: row.taxPaidOriginCountry?.toNumber(),
+    withholdingTax: row.withholdingTax?.toNumber(),
+    hasProofDocument: row.hasProofDocument ?? undefined,
+    destinationAccountHint: row.destinationAccountHint ?? undefined,
+    transferredToBrazil: row.transferredToBrazil ?? undefined,
+    remainedAbroad: row.remainedAbroad ?? undefined,
+    nature: row.nature,
+    notes: row.notes ?? undefined,
+    exchangeRateToBrl: row.exchangeRateToBrl?.toNumber(),
+    grossAmountBrl: row.grossAmountBrl?.toNumber()
+  });
+  return classifyIncome(base, profile);
+}
+
 /** RF-003 sync: rebuild TaxableEvent rows from incomes, assets, transfers, and trusts. */
-export async function syncTaxableEvents(userId: string, taxYear: number): Promise<number> {
-  const fp = await prisma.fiscalResidenceProfile.findUnique({
+export async function syncTaxableEvents(
+  userId: string,
+  taxYear: number,
+  tx?: Prisma.TransactionClient
+): Promise<number> {
+  const db = dbClient(tx);
+  const fp = await db.fiscalResidenceProfile.findUnique({
     where: { userId_taxYear: { userId, taxYear } }
   });
   const profile = (fp?.derivedProfile ?? "undetermined") as FiscalProfile;
   const [incomes, assetRows, transferRows, trustRows] = await Promise.all([
-    prisma.incomeSource.findMany({ where: { userId, taxYear } }),
-    prisma.asset.findMany({ where: { userId, taxYear } }),
-    prisma.internationalTransfer.findMany({ where: { userId, taxYear } }),
-    prisma.trustStructure.findMany({ where: { userId, taxYear } })
+    db.incomeSource.findMany({ where: { userId, taxYear } }),
+    db.asset.findMany({ where: { userId, taxYear } }),
+    db.internationalTransfer.findMany({ where: { userId, taxYear } }),
+    db.trustStructure.findMany({ where: { userId, taxYear } })
   ]);
-  const parsed = incomes.map((row) => {
-    const base = incomeRowBaseSchema.parse({
-      payerName: row.payerName,
-      originCountry: row.originCountry,
-      incomeType: row.incomeType,
-      grossAmount: row.grossAmount.toNumber(),
-      originalCurrency: row.originalCurrency,
-      paymentDate: row.paymentDate.toISOString().slice(0, 10),
-      periodicity: row.periodicity,
-      taxPaidOriginCountry: row.taxPaidOriginCountry?.toNumber(),
-      withholdingTax: row.withholdingTax?.toNumber(),
-      hasProofDocument: row.hasProofDocument ?? undefined,
-      destinationAccountHint: row.destinationAccountHint ?? undefined,
-      transferredToBrazil: row.transferredToBrazil ?? undefined,
-      remainedAbroad: row.remainedAbroad ?? undefined,
-      nature: row.nature,
-      notes: row.notes ?? undefined,
-      exchangeRateToBrl: row.exchangeRateToBrl?.toNumber(),
-      grossAmountBrl: row.grossAmountBrl?.toNumber()
-    });
-    return classifyIncome(base, profile);
-  });
+  const parsed = incomes.map((row) => classifiedFromDbIncome(row, profile));
   const incomeEvents = detectTaxableEventsFromIncomes(parsed);
   const assetsParsed = assetRows.map((r) =>
     assetSchema.parse({
@@ -139,10 +168,10 @@ export async function syncTaxableEvents(userId: string, taxYear: number): Promis
     }))
   ];
 
-  await prisma.taxableEvent.deleteMany({ where: { userId, taxYear } });
-  for (const { e, incomeRow, incomeParsed } of allEvents) {
-    await prisma.taxableEvent.create({
-      data: {
+  await db.taxableEvent.deleteMany({ where: { userId, taxYear } });
+  if (allEvents.length > 0) {
+    await db.taxableEvent.createMany({
+      data: allEvents.map(({ e, incomeRow, incomeParsed }) => ({
         userId,
         taxYear,
         eventType: e.eventType,
@@ -156,7 +185,7 @@ export async function syncTaxableEvents(userId: string, taxYear: number): Promis
         amountBrl: incomeParsed?.grossAmountBrl ?? undefined,
         currency: incomeParsed?.originalCurrency ?? undefined,
         amountOriginal: incomeParsed?.grossAmount ?? undefined
-      }
+      }))
     });
   }
   return allEvents.length;
@@ -171,7 +200,7 @@ export async function recomputeMonthlyTax(
   const fp = await db.fiscalResidenceProfile.findUnique({
     where: { userId_taxYear: { userId, taxYear } }
   });
-  const profile = fp?.derivedProfile ?? "undetermined";
+  const profile = (fp?.derivedProfile ?? "undetermined") as FiscalProfile;
   if (profile === "resident_usa") {
     return;
   }
@@ -212,10 +241,9 @@ export async function recomputeMonthlyTax(
   const monthlyDeductionTotal = sumDeductionsForScope(deductions, "monthly", "BRL");
   const monthlyExemptionTotal = sumExemptionsForScope(exemptions, "monthly", "BRL");
 
-  const carnetRows = incomes.filter((row) => {
-    const cls = row.classification as { calculationModule?: string } | null;
-    return isCarnetLeaoLine(cls);
-  });
+  const carnetRows = incomes.filter((row) =>
+    isCarnetLeaoLine(classifiedFromDbIncome(row, profile).classification)
+  );
   const lineOffsets = allocateMonthlyOffsets(
     carnetRows.map((row) => ({
       incomeSourceId: row.id,
@@ -228,10 +256,7 @@ export async function recomputeMonthlyTax(
 
   const items = [];
   for (const row of carnetRows) {
-    const cls = row.classification as {
-      calculationModule?: string;
-      lei14754ForeignProfitsEligible?: boolean;
-    } | null;
+    const cls = classifiedFromDbIncome(row, profile).classification;
     const paymentDate = row.paymentDate.toISOString().slice(0, 10);
     const fx = resolveBrlFromIncome({
       grossAmount: row.grossAmount.toNumber(),
@@ -437,10 +462,7 @@ export async function estimateAnnualTax(
       let grossBrl = 0;
       let review = fp?.requiresAdditionalReview ?? false;
       for (const row of incomes) {
-        const cls = row.classification as {
-          calculationModule?: string;
-          taxTreatment?: string;
-        } | null;
+        const cls = classifiedFromDbIncome(row, profile).classification;
         if (!includesInOrdinaryAnnual(cls)) continue;
         const paymentDate = row.paymentDate.toISOString().slice(0, 10);
         const fx = resolveBrlFromIncome({
@@ -456,7 +478,7 @@ export async function estimateAnnualTax(
       const dedBrl = deductions.reduce((s, d) => s + (d.amountBrl?.toNumber() ?? d.amount.toNumber()), 0);
       let foreignBrl = 0;
       for (const row of incomes) {
-        const cls = row.classification as { calculationModule?: string; taxTreatment?: string } | null;
+        const cls = classifiedFromDbIncome(row, profile).classification;
         if (!includesInOrdinaryAnnual(cls)) continue;
         const paid = row.taxPaidOriginCountry?.toNumber() ?? 0;
         if (paid <= 0) continue;
@@ -478,26 +500,33 @@ export async function estimateAnnualTax(
         requiresAdditionalReview: review,
         pack: brPack
       });
-      const mergedNetDue = est.netTaxDue + capGainTaxBrl;
-      const mergedGrossTax = est.grossTax + capGainTaxBrl;
+      const monthlyRows = await db.monthlyTaxCalculation.findMany({ where: { userId, taxYear } });
+      const monthlyGross = monthlyRows.reduce((s, m) => s + m.taxableBase.toNumber(), 0);
+      const monthlyNet = monthlyRows.reduce((s, m) => s + m.netTaxDue.toNumber(), 0);
+      const monthlyTax = monthlyRows.reduce((s, m) => s + m.grossTax.toNumber(), 0);
+      review ||= monthlyRows.some((m) => m.requiresAdditionalReview);
+      const mergedNetDue = est.netTaxDue + capGainTaxBrl + monthlyNet;
+      const mergedGrossTax = est.grossTax + capGainTaxBrl + monthlyTax;
+      const mergedGrossIncome = est.grossIncome + monthlyGross;
+      const mergedTaxableBase = est.taxableBase + monthlyGross;
       const ruleVersion = buildStampWithOverrides(brPack.dataPackId, brPatches);
       await db.taxCalculation.create({
         data: {
           userId,
           taxYear: est.taxYear,
           calculationType: est.calculationType,
-          grossIncome: est.grossIncome,
+          grossIncome: mergedGrossIncome,
           deductionsTotal: est.deductionsTotal,
           exemptionsTotal: est.exemptionsTotal,
-          taxableBase: est.taxableBase,
+          taxableBase: mergedTaxableBase,
           appliedRate: est.appliedRate,
           grossTax: mergedGrossTax,
           foreignTaxPaid: est.foreignTaxPaid ?? null,
           taxCreditApplied: est.taxCreditApplied ?? null,
           netTaxDue: mergedNetDue,
           currency: est.currency,
-          calculationStatus: est.calculationStatus,
-          requiresAdditionalReview: est.requiresAdditionalReview,
+          calculationStatus: review || est.requiresAdditionalReview ? "preliminary" : est.calculationStatus,
+          requiresAdditionalReview: review || est.requiresAdditionalReview,
           ruleVersion,
           jurisdiction: "BR",
           dataPackVersion: est.dataPackVersion ?? brPack.dataPackId,
@@ -514,17 +543,15 @@ export async function estimateAnnualTax(
       let generalForeignTaxUsd = 0;
       let review = fp?.requiresAdditionalReview ?? false;
       for (const row of incomes) {
-        const cls = row.classification as {
-          calculationModule?: string;
-          taxTreatment?: string;
-          ftcBasket?: "passive" | "general";
-        } | null;
-        if (!includesInOrdinaryAnnual(cls)) continue;
+        const cls = classifiedFromDbIncome(row, profile).classification;
+        if (!includesInUsOrdinaryAnnual(cls)) continue;
         const paymentDate = row.paymentDate.toISOString().slice(0, 10);
         const fx = resolveUsdFromIncome({
           grossAmount: row.grossAmount.toNumber(),
           originalCurrency: row.originalCurrency,
-          paymentDate
+          paymentDate,
+          grossAmountBrl: row.grossAmountBrl?.toNumber(),
+          exchangeRateToBrl: row.exchangeRateToBrl?.toNumber()
         });
         grossUsd += fx.amountUsd;
         review ||= fx.requiresAdditionalReview;
@@ -599,8 +626,13 @@ export async function estimateAnnualTax(
   }
 }
 
-async function loadUsFilingInputsForUser(userId: string, taxYear: number): Promise<UsFilingInputsForEstimate | undefined> {
-  const session = await prisma.conversationSession.findFirst({
+async function loadUsFilingInputsForUser(
+  userId: string,
+  taxYear: number,
+  tx?: Prisma.TransactionClient
+): Promise<UsFilingInputsForEstimate | undefined> {
+  const db = dbClient(tx);
+  const session = await db.conversationSession.findFirst({
     where: { userId, taxYear },
     orderBy: { updatedAt: "desc" },
     select: { contextJson: true }
@@ -621,9 +653,9 @@ async function loadUsFilingInputsForUser(userId: string, taxYear: number): Promi
 
 export async function buildAndSaveReport(userId: string, taxYear: number): Promise<string> {
   return prisma.$transaction(async (tx) => {
-    await syncTaxableEvents(userId, taxYear);
+    await syncTaxableEvents(userId, taxYear, tx);
     await recomputeMonthlyTax(userId, taxYear, tx);
-    const usFiling = await loadUsFilingInputsForUser(userId, taxYear);
+    const usFiling = await loadUsFilingInputsForUser(userId, taxYear, tx);
     await estimateAnnualTax(userId, taxYear, tx, usFiling);
 
     const fp = await tx.fiscalResidenceProfile.findUnique({
@@ -659,6 +691,30 @@ export async function buildAndSaveReport(userId: string, taxYear: number): Promi
     const reportJurisdiction = jurs.includes("BR") && jurs.includes("US") ? "BR+US" : jurs.includes("US") ? "US" : "BR";
 
     const annualTaxEstimates = await getLatestTaxCalculationSnapshot(userId, taxYear, tx);
+    const unconvertedIncome = incomes
+      .filter((row) => {
+        const paymentDate = row.paymentDate.toISOString().slice(0, 10);
+        const brl = resolveBrlFromIncome({
+          grossAmount: row.grossAmount.toNumber(),
+          originalCurrency: row.originalCurrency,
+          grossAmountBrl: row.grossAmountBrl?.toNumber(),
+          exchangeRateToBrl: row.exchangeRateToBrl?.toNumber(),
+          paymentDate
+        });
+        const usd = resolveUsdFromIncome({
+          grossAmount: row.grossAmount.toNumber(),
+          originalCurrency: row.originalCurrency,
+          paymentDate,
+          grossAmountBrl: row.grossAmountBrl?.toNumber(),
+          exchangeRateToBrl: row.exchangeRateToBrl?.toNumber()
+        });
+        return brl.requiresAdditionalReview || usd.requiresAdditionalReview;
+      })
+      .map((row) => ({
+        amount: row.grossAmount.toNumber(),
+        currency: row.originalCurrency,
+        payerName: row.payerName
+      }));
 
     const summary = buildTaxReportSummary({
       taxYear,
@@ -674,6 +730,7 @@ export async function buildAndSaveReport(userId: string, taxYear: number): Promi
       trusts: trusts,
       entitySimulations: entitySims,
       annualTaxEstimates,
+      unconvertedIncome,
       requiresAdditionalReview,
       ruleVersion: reportRuleVersion
     });

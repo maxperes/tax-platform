@@ -1,5 +1,6 @@
 import type { ConversationState } from "@tax-platform/shared";
 import { parsePaymentLines } from "../income-multi-parse.js";
+import { looksLikeDateAnswer } from "../fiscal-intake.js";
 import { isTriagePending, parseIntakeGoal, parseUsFilingInputs } from "../intake-helpers.js";
 import {
   isConfirmReplaceFiscalProfile,
@@ -28,6 +29,7 @@ export function isFiscalClarificationQuestion(text: string): boolean {
   if (isHelpIntent(text)) return false;
   return (
     t.includes("?") ||
+    /^(explain|why|what|huh)$/i.test(t) ||
     /\b(what is|what's|whats|what does|explain|mean|why do you need|iso code|country code)\b/i.test(t)
   );
 }
@@ -35,9 +37,18 @@ export function isFiscalClarificationQuestion(text: string): boolean {
 export function isTrustOrComplianceConcern(userContent: string): boolean {
   const lower = userContent.trim().toLowerCase();
   if (!lower) return false;
-  const trustKeywords =
-    /\b(store|stored|save|saved|retain|retention|privacy|private|data|security|secure|encrypt|encrypted|access|who can access|share|shared|delete|deletion|erase|remove|export|download my data|confidential|confidentiality|consent|lgpd|gdpr)\b/i;
-  return trustKeywords.test(lower);
+  const privacyTopic =
+    /\b(privacy|private|security|secure|encrypt(?:ed|ion)?|confidential(?:ity)?|consent|lgpd|gdpr|retention|who can access|download my data)\b/i;
+  if (privacyTopic.test(lower)) return true;
+  const actionVerb =
+    /\b(store|stored|save|saved|retain|data|access|share|shared|delete|deletion|erase|remove|export)\b/i;
+  if (!actionVerb.test(lower)) return false;
+  // Require question/concern framing so intake prose like "save this amount" is not stolen.
+  return (
+    /\?/.test(lower) ||
+    /\b(how|where|do you|will you|can you|is my|my data|my info|my information)\b/i.test(lower) ||
+    /\b(worried|concern(?:ed)?|safe|trust)\b/i.test(lower)
+  );
 }
 
 export function isLikelyOffTopicUserMessage(
@@ -67,10 +78,11 @@ export function isLikelyOffTopicUserMessage(
       return true;
     }
     if (context._usFilingPending === true) {
-      if (parseUsFilingInputs(t)) return false;
+      if (parseUsFilingInputs(t, context)) return false;
       return true;
     }
     if (isFiscalClarificationQuestion(t)) return false;
+    if (looksLikeDateAnswer(t)) return false;
     const chitChat =
       /\b(weather|joke|recipe|movie|sport|football|soccer|nba|who won|world cup|translate|poem|story|chatgpt|linux|windows|macos|javascript|python)\b/i;
     if (chitChat.test(t)) return true;

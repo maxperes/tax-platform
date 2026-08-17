@@ -63,15 +63,15 @@ export function AdminUsersPage() {
 
   return (
     <div className="min-h-screen p-6">
-      <div className="mx-auto max-w-4xl rounded-2xl border border-slate-800 bg-slate-900/80 p-8 shadow-xl space-y-6">
+      <div className="mx-auto max-w-4xl rounded-2xl border border-surface-border bg-white p-8 shadow-xl space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold mb-1">User approvals</h1>
-            <p className="text-slate-400 text-sm">Review registration requests and manage access.</p>
+            <p className="text-navy-700/75 text-sm">Review registration requests and manage access.</p>
           </div>
           <Link
             to="/sessions"
-            className="text-sm text-emerald-400 hover:underline"
+            className="text-sm text-accent-dark hover:underline"
           >
             Tax intake
           </Link>
@@ -83,10 +83,10 @@ export function AdminUsersPage() {
               key={filter.value}
               type="button"
               onClick={() => setStatusFilter(filter.value)}
-              className={`rounded-lg px-3 py-1.5 text-sm ${
+              className={`rounded-full px-3 py-1.5 text-sm ${
                 statusFilter === filter.value
-                  ? "bg-emerald-600 text-white"
-                  : "border border-slate-700 text-slate-300 hover:border-emerald-600"
+                  ? "bg-accent text-white"
+                  : "border border-surface-border text-navy-700 hover:border-accent"
               }`}
             >
               {filter.label}
@@ -95,26 +95,26 @@ export function AdminUsersPage() {
         </div>
 
         {isError && (
-          <div className="rounded-lg border border-rose-800/50 bg-rose-950/30 px-4 py-3 text-sm text-rose-200">
+          <div className="rounded-lg border border-alertRed/30 bg-alertRed-light px-4 py-3 text-sm text-alertRed">
             <p>Could not load users.</p>
             <button
               type="button"
               onClick={() => void refetch()}
-              className="mt-2 text-emerald-400 hover:underline"
+              className="mt-2 text-accent-dark hover:underline"
             >
               Retry
             </button>
           </div>
         )}
 
-        {actionError && <p className="text-sm text-red-400">{actionError}</p>}
+        {actionError && <p className="text-sm text-alertRed">{actionError}</p>}
 
         {users.length === 0 ? (
-          <p className="text-sm text-slate-400">No users in this category.</p>
+          <p className="text-sm text-navy-700/75">No users in this category.</p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-slate-800">
+          <div className="overflow-x-auto rounded-lg border border-surface-border">
             <table className="w-full text-sm text-left">
-              <thead className="bg-slate-950/80 text-slate-400">
+              <thead className="bg-surface-muted text-navy-700/75">
                 <tr>
                   <th className="px-4 py-3 font-medium">Email</th>
                   <th className="px-4 py-3 font-medium">Status</th>
@@ -125,11 +125,11 @@ export function AdminUsersPage() {
               </thead>
               <tbody>
                 {users.map((user) => (
-                  <tr key={user.id} className="border-t border-slate-800">
+                  <tr key={user.id} className="border-t border-surface-border">
                     <td className="px-4 py-3">{user.email}</td>
                     <td className="px-4 py-3 capitalize">{user.status}</td>
                     <td className="px-4 py-3">{user.isAdmin ? "Yes" : "No"}</td>
-                    <td className="px-4 py-3 text-slate-400">
+                    <td className="px-4 py-3 text-navy-700/75">
                       {new Date(user.createdAt).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-3">
@@ -140,7 +140,7 @@ export function AdminUsersPage() {
                               type="button"
                               disabled={actingOn === user.id}
                               onClick={() => void runAction(user.id, "approve")}
-                              className="rounded bg-emerald-600 px-2 py-1 text-xs hover:bg-emerald-500 disabled:opacity-50"
+                              className="rounded-full bg-accent px-2 py-1 text-xs text-white hover:bg-accent-dark disabled:opacity-50"
                             >
                               Approve
                             </button>
@@ -148,7 +148,7 @@ export function AdminUsersPage() {
                               type="button"
                               disabled={actingOn === user.id}
                               onClick={() => void runAction(user.id, "reject")}
-                              className="rounded border border-rose-700 px-2 py-1 text-xs text-rose-300 hover:bg-rose-950 disabled:opacity-50"
+                              className="rounded-full border border-alertRed/40 px-2 py-1 text-xs text-alertRed hover:bg-alertRed-light disabled:opacity-50"
                             >
                               Reject
                             </button>
@@ -159,7 +159,7 @@ export function AdminUsersPage() {
                             type="button"
                             disabled={actingOn === user.id}
                             onClick={() => void runAction(user.id, "approve")}
-                            className="rounded bg-emerald-600 px-2 py-1 text-xs hover:bg-emerald-500 disabled:opacity-50"
+                            className="rounded-full bg-accent px-2 py-1 text-xs text-white hover:bg-accent-dark disabled:opacity-50"
                           >
                             Approve
                           </button>
@@ -168,7 +168,7 @@ export function AdminUsersPage() {
                           type="button"
                           disabled={actingOn === user.id}
                           onClick={() => void runAction(user.id, { isAdmin: !user.isAdmin })}
-                          className="rounded border border-slate-600 px-2 py-1 text-xs text-slate-300 hover:border-emerald-600 disabled:opacity-50"
+                          className="rounded border border-surface-border px-2 py-1 text-xs text-navy-700 hover:border-accent disabled:opacity-50"
                         >
                           {user.isAdmin ? "Remove admin" : "Make admin"}
                         </button>
@@ -181,8 +181,8 @@ export function AdminUsersPage() {
           </div>
         )}
 
-        <div className="flex gap-3 pt-2 border-t border-slate-800 text-sm">
-          <button type="button" onClick={handleSignOut} className="text-slate-400 hover:text-slate-200">
+        <div className="flex gap-3 pt-2 border-t border-surface-border text-sm">
+          <button type="button" onClick={handleSignOut} className="text-navy-700/75 hover:text-navy">
             Sign out
           </button>
         </div>

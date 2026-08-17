@@ -24,7 +24,30 @@ export const fiscalResidenceSchema = z.object({
   hasUSWorkVisa: z.boolean().optional(),
   hasPermanentAddressBrazil: z.boolean().optional(),
   hasPermanentAddressUSA: z.boolean().optional(),
-  hasDependentsBrazilOrAbroad: z.boolean().optional()
+  hasDependentsBrazilOrAbroad: z.boolean().optional(),
+
+  /** Map-aligned life facts collected by copilot (optional; interview path stores these on interviewJson). */
+  firstEntryBrazilDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  immigrationStatus: z
+    .enum([
+      "tourist",
+      "temporary_visa",
+      "digital_nomad",
+      "work_visa",
+      "retirement_visa",
+      "family_reunion",
+      "permanent",
+      "citizen",
+      "none"
+    ])
+    .optional(),
+  hasCpf: z.boolean().optional(),
+  hasResidencePermit: z.boolean().optional(),
+  intendsToRemain: z.enum(["yes", "temporarily", "no"]).optional(),
+  lastFilingCountry: z.string().min(2).optional(),
+  filedBrazilianReturn: z.boolean().optional(),
+  maritalStatus: z.enum(["single", "married", "stable_union", "divorced", "widowed"]).optional(),
+  dependentsCount: z.number().int().min(0).max(30).optional()
 });
 
 export type FiscalResidence = z.infer<typeof fiscalResidenceSchema>;

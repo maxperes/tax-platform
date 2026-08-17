@@ -16,12 +16,14 @@ import {
   nextActionsBlock,
   resolveIncomeGaps,
   triagePromptText,
-  usFilingPromptText
+  usFilingPromptText,
+  usFilingStatusLabel
 } from "../intake-helpers.js";
 import { getLatestTaxCalculationSnapshot } from "../tax-pipeline.js";
 import {
   describeFiscalProfileForRecap,
   fiscalProfileConfirmPromptText,
+  fiscalProfileSavedLead,
   getFiscalResidenceCurrentQuestion,
   isFiscalProfileConfirmPending
 } from "./fiscal-orchestration.js";
@@ -30,7 +32,7 @@ export { describeFiscalProfileForRecap };
 
 export function initialAssistantMessage(taxYear: number): string {
   return (
-    `Hi, I will guide you step by step for your **${taxYear}** tax intake. We will ask what applies to you first, then tax-related questions, and contact details at the end.\n\n` +
+    `Hi — I will collect the same facts as the structured interview so we can build your **${taxYear} 360° tax map**. Filing detail is optional after that.\n\n` +
     triagePromptText()
   );
 }
@@ -43,37 +45,61 @@ export function intakeRedirectForState(state: ConversationState, context: Record
     return `Now, let's continue: ${getFiscalResidenceCurrentQuestion(context)}`;
   }
   if (state === "income_capture") {
-    return "Add income using **amount**, **currency**, and **date** (or **per month** for monthly gross). Use the **income form** for a table view.";
+    return "Add each income with **amount**, **currency**, and **date** (or **per month**). Example: **`10900 USD 2026-01-31`**. Name the type when you can (salary, pension, dividends). Say **that's all** when you are done.";
   }
   if (state === "events") {
-    return "Next we **review taxable events derived from your income** — confirm the table or go back to income to fix sources.";
+    return "Check the income classification below. If it looks right, say **looks correct** or **yes**. To change a source, say **go back to income**.";
   }
   if (state === "deductions") {
-    return "List **deductions** you want to claim (type, amount, currency, tax period), one at a time, or say you have none.";
+    return (
+      "Any **deductions** this year (health, education, pension)?\n\n" +
+      "Example: **health insurance 2400 BRL**.\n\n" +
+      "If you have none, reply **none**."
+    );
   }
   if (state === "capital_gain") {
-    return "Next, we capture **capital gains** (asset type, acquisition and sale dates/values, currencies). Describe one disposition at a time here in chat.";
+    return (
+      "Did you **sell** anything this year (stocks, a home, crypto, a company share)?\n\n" +
+      "If yes, describe one sale, for example:\n" +
+      "**Sold 100 shares of Apple, bought Jan 2020 for 12,000 USD, sold Mar 2026 for 18,000 USD.**\n\n" +
+      "If you did not sell anything, reply **none**."
+    );
   }
   if (state === "patrimony") {
-    return "Register **assets and patrimony** (property, investments, foreign holdings) using the patrimony form or describe in chat.";
+    return (
+      "Do you want to list **assets you own** (home, investments, accounts abroad)?\n\n" +
+      "Describe one, or reply **none**."
+    );
   }
   if (state === "transfers") {
-    return "Record **international transfers** (from/to country, amount, date, classification). Own-account moves are non-taxable.";
+    return (
+      "Did you **move money between countries** this year (not counting salary already listed)?\n\n" +
+      "Describe one transfer, or reply **none**. Transfers to your own account are usually not extra tax."
+    );
   }
   if (state === "trust_registry") {
-    return "Register any **trust structures** (name, jurisdiction, revocable vs irrevocable). Say **none** if not applicable.";
+    return (
+      "Do you have a **trust** (a legal structure that holds assets for you)?\n\n" +
+      "If yes, give the name, country, and whether you can revoke it. If not, reply **none**."
+    );
   }
   if (state === "entity_simulation") {
-    return "Run a **PF vs PJ simulation** (pro-labore %, profit distribution, estimated PJ tax rate) using the form or chat.";
+    return (
+      "Optional: compare paying tax as an **individual vs through a company**.\n\n" +
+      "If that does not apply, reply **none**."
+    );
   }
   if (state === "monthly_calc") {
-    return "We review **monthly Carnê-Leão** totals built from your income timeline. Confirm the month table or say what to fix.";
+    return (
+      "These are **monthly Brazilian tax estimates** on foreign income (Carnê-Leão).\n\n" +
+      "Say **looks correct** or **yes** to continue, or tell us what to fix."
+    );
   }
   if (state === "report") {
-    return "We **finalize your year summary** from what you entered. Answer the assistant when asked if you would like a short recap—your **yes** saves a report draft and shows counts here in chat.";
+    return "When you are ready, say **generate the report**. That saves a draft summary you can download.";
   }
   if (state === "complete") {
-    return "This year is **marked complete**. Say **go back to income**, **deductions**, **events**, **report**, or another step to change earlier answers, or ask to **regenerate the report**. Download the latest report from the bar under the steps when it appears.";
+    return "You're done with this year's intake. To change something, say **go back to income**. After edits, say **regenerate the report**.";
   }
   return `Current step: **${state}**. Please continue with the information requested for this step.`;
 }
@@ -100,7 +126,7 @@ export async function incomeCheckpointMessage(userId: string, taxYear: number): 
 
   if (rows.length === 0) {
     return (
-      `**Income screening:** any income from **Brazil**, the **US**, or **other countries** this year? Add each source with amount, currency, and date.\n\n${cta}\n\n_Income on file: **0** rows._`
+      `**Income for your 360° map:** which categories did you receive this year (salary, self-employment, Social Security, pensions, dividends, interest, capital gains, rental, RSUs, crypto, …)? Add each source with amount, currency, and date — and say if tax was withheld abroad.\n\n${cta}\n\n_Income on file: **0** rows._`
     );
   }
 
@@ -155,20 +181,29 @@ export async function postToolCallAssistantText(
       fr && typeof fr === "object"
         ? fiscalResidenceSchema.safeParse(fr)
         : ({ success: false } as const);
-    const plan = await loadIntakeModulePlan(userId, taxYear, context);
     if (parsed.success) {
       const profile = deriveFiscalProfile(parsed.data);
-      const review = profile.requiresAdditionalReview ? " This case may need expert review." : "";
-      const name = parsed.data.fullName?.trim();
-      const thanks = name ? `Thanks, **${name}**. ` : "";
-      const planNote = describeModulePlanForUser(plan);
       const tail =
         context._usFilingPending === true
-          ? usFilingPromptText()
+          ? usFilingPromptText(context)
           : await resolveIntakeRedirect("income_capture", context, userId, taxYear);
-      return `${thanks}Your fiscal profile for **${taxYear}** is saved as **${profile.profile}**.${review}\n\n${planNote}\n\n${tail}`;
+      const us = context.usFilingInputs as { filingStatus?: string } | undefined;
+      const inferredNote =
+        newState === "income_capture" &&
+        (us?.filingStatus === "single" || us?.filingStatus === "mfj" || us?.filingStatus === "hoh")
+          ? `We'll use **${usFilingStatusLabel(us.filingStatus)}** for the US estimate.\n\n`
+          : "";
+      return `${fiscalProfileSavedLead({
+        taxYear,
+        profile: profile.profile,
+        requiresAdditionalReview: profile.requiresAdditionalReview,
+        fullName: parsed.data.fullName
+      })}\n\n${inferredNote}${tail}`;
     }
-    return `Your progress on the fiscal profile for **${taxYear}** is saved.\n\n${await resolveIntakeRedirect(newState, context, userId, taxYear)}`;
+    if (newState === "fiscal_residence") {
+      return getFiscalResidenceCurrentQuestion(context);
+    }
+    return await resolveIntakeRedirect(newState, context, userId, taxYear);
   }
   if (newState !== prevState) {
     const stepLabel = newState.replace(/_/g, " ");
