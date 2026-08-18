@@ -7,7 +7,12 @@ const apiRoot = path.dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: path.resolve(apiRoot, "../../.env"), override: false });
 loadEnv({ path: path.resolve(apiRoot, ".env"), override: true });
 
-/** `prisma generate` never connects; Docker/CI builds may not have a real DATABASE_URL yet. */
+/**
+ * Do not use `env("DATABASE_URL")` from `prisma/config` here.
+ * That helper throws PrismaConfigEnvError when the var is missing, and every
+ * Prisma CLI command loads this file — including `prisma generate`, which never
+ * connects. Railway Dockerfile builds do not inject DATABASE_URL.
+ */
 const GENERATE_PLACEHOLDER_URL =
   "postgresql://prisma-generate:prisma-generate@127.0.0.1:5432/prisma_generate?schema=public";
 

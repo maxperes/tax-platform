@@ -10,6 +10,11 @@ COPY packages ./packages
 COPY apps ./apps
 RUN pnpm install --frozen-lockfile
 
+# Prisma 7 loads prisma.config.ts for every CLI command, including `prisma generate`.
+# Railway Dockerfile builds do not inject service variables unless they are ARG/ENV.
+# generate never connects; this placeholder must not be set in the runner stage.
+ENV DATABASE_URL=postgresql://prisma-generate:prisma-generate@127.0.0.1:5432/prisma_generate?schema=public
+
 RUN pnpm --filter @tax-platform/shared build \
   && pnpm --filter @tax-platform/rules build \
   && pnpm --filter @tax-platform/api exec prisma generate \
