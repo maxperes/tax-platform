@@ -26,7 +26,11 @@ export async function handleUsFiling(h: HandlerContext): Promise<HandlerResult> 
     };
   }
 
-  const newCtx = { ...h.ctx, usFilingInputs: usInputs, _usFilingPending: false };
+  const newCtx: Record<string, unknown> = {
+    ...h.ctx,
+    usFilingInputs: usInputs,
+    _usFilingPending: false
+  };
   delete newCtx._fiscalProfileConfirmPending;
   await prisma.conversationSession.update({
     where: { id: h.sessionId },
