@@ -23,6 +23,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm test
+        env:
+          # Unit tests import modules that initialize Prisma; no real DB is required.
+          DATABASE_URL: postgresql://tax:tax@127.0.0.1:5432/tax_platform_test?schema=public
       - run: pnpm build
 
   docker:
