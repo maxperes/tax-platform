@@ -44,7 +44,13 @@ function decodeText(buffer: Buffer): string | null {
   const utf8 = buffer.toString("utf8");
   const replacement = (utf8.match(/\uFFFD/g) ?? []).length;
   if (utf8.includes("\u0000") || replacement > utf8.length * 0.02) return null;
-  const printable = utf8.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
+  let printable = "";
+  for (const char of utf8) {
+    const code = char.charCodeAt(0);
+    // Keep tab (9), LF (10), CR (13); drop other C0 controls.
+    if (code <= 0x1f && code !== 0x09 && code !== 0x0a && code !== 0x0d) continue;
+    printable += char;
+  }
   if (printable.trim().length < 8) return null;
   return printable;
 }
@@ -172,8 +178,8 @@ function parseTaxFormText(text: string, fileName: string): StructuredExtraction 
     /(?:net benefits|social security benefits)[:\s]*\$?\s*([\d,]+(?:\.\d{1,2})?)/i
   );
   const paymentDate =
-    parseIsoDate(text.match(/payment date[:\s]+([0-9/\-]+)/i)?.[1] ?? "") ??
-    parseIsoDate(text.match(/credit date[:\s]+([0-9/\-]+)/i)?.[1] ?? "");
+    parseIsoDate(text.match(/payment date[:\s]+([0-9/-]+)/i)?.[1] ?? "") ??
+    parseIsoDate(text.match(/credit date[:\s]+([0-9/-]+)/i)?.[1] ?? "");
 
   if (dividend) {
     incomes.push({

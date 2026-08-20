@@ -523,14 +523,17 @@ export function nextStateAfterEvents(plan: IntakeModulePlan): ConversationState 
 }
 
 export function nextStateAfterCapitalGain(_plan: IntakeModulePlan): ConversationState {
+  void _plan;
   return "patrimony";
 }
 
 export function nextStateAfterPatrimony(_plan: IntakeModulePlan): ConversationState {
+  void _plan;
   return "transfers";
 }
 
 export function nextStateAfterTransfers(_plan: IntakeModulePlan): ConversationState {
+  void _plan;
   return "trust_registry";
 }
 
@@ -540,6 +543,7 @@ export function nextStateAfterTrustRegistry(plan: IntakeModulePlan): Conversatio
 }
 
 export function nextStateAfterEntitySimulation(_plan: IntakeModulePlan): ConversationState {
+  void _plan;
   return "deductions";
 }
 
