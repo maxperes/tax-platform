@@ -31,6 +31,13 @@ describe("brazil-stays helpers", () => {
     expect(patch.brazil_trip_1_exit).toBe("2024-03-01");
   });
 
+  it("clears a previously set exit date when omitted", () => {
+    const patch = syncBrazilStaysToInterviewAnswers([{ entryDate: "2024-01-01" }], true);
+    expect(patch.brazil_trip_1_entry).toBe("2024-01-01");
+    expect(patch.brazil_trip_1_exit).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(patch, "brazil_trip_1_exit")).toBe(true);
+  });
+
   it("counts inclusive presence days", () => {
     const days = countPresenceDaysFromStays(
       [{ entryDate: "2026-01-01", exitDate: "2026-01-03" }],

@@ -1,5 +1,5 @@
 import { DOCUMENT_DEFS, labelFor, COUNTRY_OPTIONS, INCOME_OPTIONS, ASSET_OPTIONS } from "./options";
-import { STEPS, stepsForInterview } from "./questions";
+import { IMMIGRATION_IMPLIES_PERMIT, STEPS, stepsForInterview } from "./questions";
 import { NOT_SURE } from "./types";
 import { collectBrazilStaysFromInterview, countPresenceDaysFromStays } from "@tax-platform/shared";
 import type {
@@ -34,12 +34,42 @@ function optionsFor(selected: string[], catalogue: Option[]): Option[] {
   return catalogue.filter((option) => selected.includes(option.value));
 }
 
+/** True when company/trust ownership is selected (or legacy owns_entities answer). */
+export function ownsCompaniesOrTrusts(record: DemoRecord): boolean {
+  const assets = asList(record, "asset_types");
+  return (
+    assets.includes("foreign_companies") ||
+    assets.includes("brazilian_companies") ||
+    assets.includes("trust_interests") ||
+    asString(record, "owns_entities") === "yes"
+  );
+}
+
+/** Infer residence permit from immigration status when the permit question was removed. */
+export function inferredResidencePermit(record: DemoRecord): string | undefined {
+  const explicit = asString(record, "has_residence_permit");
+  if (explicit) return explicit;
+  const status = asString(record, "immigration_status");
+  if (!status || status === NOT_SURE) return undefined;
+  if (IMMIGRATION_IMPLIES_PERMIT.has(status)) return "yes";
+  if (status === "tourist" || status === "none") return "no";
+  return undefined;
+}
+
+function filedBrazilianReturnAnswer(record: DemoRecord): string | undefined {
+  const explicit = asString(record, "filed_brazilian_return");
+  if (explicit) return explicit;
+  if (asString(record, "last_filing_country") === "br") return "yes";
+  return undefined;
+}
+
 /* -------------------------------------------------------------- progress */
 
 export function interviewSteps(record: DemoRecord) {
   const selected = asList(record, "income_types");
   return stepsForInterview(selected, {
-    assetTypes: asList(record, "asset_types")
+    assetTypes: asList(record, "asset_types"),
+    lastFilingCountry: asString(record, "last_filing_country")
   });
 }
 
@@ -132,7 +162,7 @@ export interface ResidencySignal {
 export function residencySignals(record: DemoRecord): ResidencySignal[] {
   const stays = collectBrazilStaysFromInterview(record);
   const presenceDays = stays ? countPresenceDaysFromStays(stays) : undefined;
-  const permit = asString(record, "has_residence_permit");
+  const permit = inferredResidencePermit(record);
   const dual = asString(record, "dual_residency_risk");
 
   return [
@@ -151,7 +181,7 @@ export function residencySignals(record: DemoRecord): ResidencySignal[] {
       label: "Residence permit",
       value:
         permit === "yes" ? "Held" : permit === "no" ? "Not held" : "Not confirmed",
-      note: "Immigration status and tax residency are assessed separately.",
+      note: "Inferred from Brazilian immigration status when not answered separately.",
     },
     {
       label: "Possible dual residency",
@@ -314,7 +344,7 @@ export function countryBlocks(record: DemoRecord): CountryBlock[] {
       incomeCount: incomeIn("br"),
       assetCount: assetsIn("br"),
       taxesPaid:
-        asString(record, "filed_brazilian_return") === "yes"
+        filedBrazilianReturnAnswer(record) === "yes"
           ? "Return filed previously"
           : "No Brazilian filing reported",
       documentsAvailable: countAvailable(record, BRAZIL_DOCS),
@@ -396,7 +426,7 @@ export function preliminaryFindings(record: DemoRecord): Finding[] {
     });
   }
 
-  if (asString(record, "owns_entities") === "yes") {
+  if (ownsCompaniesOrTrusts(record)) {
     findings.push({
       label: "Foreign companies or trusts",
       status: "potential_tax_issue",
@@ -464,9 +494,7 @@ export function analysisAreas(record: DemoRecord): AnalysisArea[] {
     },
     {
       label: "Corporate interests",
-      relevant:
-        has(assets, "foreign_companies", "brazilian_companies") ||
-        asString(record, "owns_entities") === "yes",
+      relevant: ownsCompaniesOrTrusts(record),
       note: "Ownership structures may carry additional reporting duties.",
     },
     {
@@ -510,11 +538,7 @@ export function preliminaryObservations(record: DemoRecord): string[] {
       "Retirement income may receive different treatment depending on its legal nature and source.",
     );
   }
-  if (
-    assets.includes("foreign_companies") ||
-    assets.includes("trust_interests") ||
-    asString(record, "owns_entities") === "yes"
-  ) {
+  if (ownsCompaniesOrTrusts(record)) {
     observations.push(
       "Foreign company or trust interests may create additional reporting obligations.",
     );
@@ -591,7 +615,7 @@ export function attentionIndicators(record: DemoRecord): AttentionIndicator[] {
     },
   ];
 
-  if (asString(record, "owns_entities") === "yes") {
+  if (ownsCompaniesOrTrusts(record)) {
     indicators.push({
       label: "Entity ownership",
       level: "professional_analysis_required",

@@ -33,7 +33,7 @@ export const INCOME_OPTIONS: Option[] = [
   { value: "rental", label: "Rental income", description: "Income from property you own" },
   { value: "business_distributions", label: "Business distributions", description: "Profits taken from a company you own" },
   { value: "stock_options", label: "Stock options", description: "Options granted by an employer" },
-  { value: "rsus", label: "RSUs", description: "Restricted stock units" },
+  { value: "rsus", label: "RSUs (company stock that vests over time)", description: "Restricted stock units" },
   { value: "trust", label: "Trust distributions", description: "Amounts received from a trust" },
   { value: "crypto", label: "Cryptocurrency", description: "Trading, staking or disposal proceeds" },
   { value: "other_income", label: "Other income" }

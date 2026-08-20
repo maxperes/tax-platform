@@ -82,7 +82,7 @@ const FISCAL_CORE_FIELDS: FiscalFieldDef[] = [
   {
     key: "brazilStaysText",
     prompt:
-      "Record your Brazil entry and exit dates. One stay per line: **ENTRY YYYY-MM-DD, EXIT YYYY-MM-DD** (write **ongoing** if still in Brazil). Example:\n2024-03-01, 2024-06-15\n2024-09-01, ongoing"
+      "Record your Brazil entry and exit dates. List every stay in the last couple of years — one stay per line: **ENTRY YYYY-MM-DD, EXIT YYYY-MM-DD** (write **ongoing** if still in Brazil). Example:\n2024-03-01, 2024-06-15\n2024-09-01, ongoing"
   },
   {
     key: "currentResidenceCountry",
@@ -110,18 +110,15 @@ const FISCAL_MAP_FIELDS: FiscalFieldDef[] = [
   {
     key: "immigrationStatus",
     prompt: formatNumberedChoices(
-      "What Brazilian immigration status applies?",
+      "What is your Brazilian immigration status?",
       IMMIGRATION_STATUS_OPTIONS,
       "Reply with **1–9**, or **not sure**."
     )
   },
   {
     key: "hasCpf",
-    prompt: "Do you have a CPF? Reply **yes** or **no** — do not send the number."
-  },
-  {
-    key: "hasResidencePermit",
-    prompt: "Do you have a Brazilian residence permit? (yes/no / not sure)"
+    prompt:
+      "Do you have a Brazilian tax ID (CPF)? Reply **yes** or **no** — do not send the number."
   },
   {
     key: "lastFilingCountry",
@@ -129,13 +126,9 @@ const FISCAL_MAP_FIELDS: FiscalFieldDef[] = [
       "Where did you file a tax return last year? Country name or ISO, or **none** / **not sure**."
   },
   {
-    key: "filedBrazilianReturn",
-    prompt: "Have you ever filed a Brazilian tax return? (yes/no / not sure)"
-  },
-  {
     key: "declaredPermanentExitBrazil",
     prompt:
-      "Have you filed a Brazilian departure declaration (saída definitiva)? Reply **yes**, **no**, or **not applicable**."
+      "Have you filed a Brazilian permanent exit declaration (saída definitiva)? Reply **yes**, **no**, or **not applicable**."
   },
   {
     key: "maritalStatus",
@@ -143,19 +136,30 @@ const FISCAL_MAP_FIELDS: FiscalFieldDef[] = [
       "What is your marital status?\n\n" +
       "1. Single\n" +
       "2. Married\n" +
-      "3. Stable union\n" +
+      "3. Stable union / civil partnership (união estável)\n" +
       "4. Divorced\n" +
       "5. Widowed\n\n" +
       "Reply with **1–5**, or **not sure**."
   },
   {
     key: "dependentsCount",
-    prompt: "How many dependents do you have? Reply with a number, or **0**."
+    prompt:
+      "How many people do you claim as dependents for tax purposes? Reply with a number, or **0**."
   }
 ];
 
 const FISCAL_CONDITIONAL_FIELDS: { key: string; prompt: string; when: (m: Record<string, unknown>) => boolean }[] =
   [
+    {
+      key: "hasResidencePermit",
+      prompt: "Do you have a Brazilian residence permit? (yes/no / not sure)",
+      when: needsResidencePermitQuestion
+    },
+    {
+      key: "filedBrazilianReturn",
+      prompt: "Have you ever filed a Brazilian tax return? (yes/no / not sure)",
+      when: needsFiledBrazilianReturnQuestion
+    },
     {
       key: "daysInUSACalendarYear",
       prompt: "How many days did you spend in the United States in the tax year? (0–366, or **not sure**)",
@@ -208,7 +212,7 @@ const MARITAL_STATUS_OPTIONS: { id: "single" | "married" | "stable_union" | "div
   [
     { id: "single", label: "Single" },
     { id: "married", label: "Married" },
-    { id: "stable_union", label: "Stable union" },
+    { id: "stable_union", label: "Stable union / civil partnership (união estável)" },
     { id: "divorced", label: "Divorced" },
     { id: "widowed", label: "Widowed" }
   ];
@@ -314,6 +318,20 @@ export function coerceBoolLike(raw: unknown): boolean | undefined {
   if (typeof raw === "boolean") return raw;
   if (typeof raw === "string") return parseBool(raw);
   return undefined;
+}
+
+export function needsResidencePermitQuestion(merged: Record<string, unknown>): boolean {
+  const status = merged.immigrationStatus;
+  if (status === undefined || status === "not_sure") return true;
+  const value = String(status);
+  return value === "tourist" || value === "none";
+}
+
+export function needsFiledBrazilianReturnQuestion(merged: Record<string, unknown>): boolean {
+  const last = String(merged.lastFilingCountry ?? "")
+    .trim()
+    .toUpperCase();
+  return last !== "BR" && last !== "BRAZIL";
 }
 
 export function needsComplexFiscalFollowUp(merged: Record<string, unknown>): boolean {

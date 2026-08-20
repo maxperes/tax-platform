@@ -145,7 +145,7 @@ describe("interview derivation", () => {
 
   it("builds residency signals and a timeline from presence answers", () => {
     const filled = record({
-      has_residence_permit: "yes",
+      immigration_status: "permanent",
       dual_residency_risk: "yes",
       brazil_trip_count: "1",
       brazil_trip_1_entry: "2026-03-01",
@@ -196,7 +196,6 @@ describe("interview derivation", () => {
         income_types: ["salary", "social_security", "rental"],
         asset_types: ["real_estate", "foreign_companies"],
         paid_foreign_tax: "yes",
-        owns_entities: "yes",
         dual_residency_risk: "yes"
       },
       {
@@ -269,7 +268,7 @@ describe("interview derivation", () => {
     expect(attentionIndicators(few)[1]?.level).toBe("review_recommended");
 
     const many = record(
-      { owns_entities: "yes", income_types: ["salary", "dividends", "interest", "rental", "crypto"] },
+      { asset_types: ["foreign_companies"], income_types: ["salary", "dividends", "interest", "rental", "crypto"] },
       {
         documents: {
           passport_immigration: "missing",

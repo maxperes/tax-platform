@@ -25,18 +25,19 @@ const FIELD_FAQ: Record<string, string> = {
   immigrationStatus:
     "This is your **Brazilian immigration category**, not a yes/no. Reply **1–9** (tourist, temporary visa, digital nomad, work visa, retirement visa, family reunion, permanent, citizen, or none), or **not sure**.",
   hasCpf:
-    "We only need to know whether you have a CPF — never send the number. Reply **yes** or **no**.",
+    "We only need to know whether you have a Brazilian tax ID (CPF) — never send the number. Reply **yes** or **no**.",
   hasResidencePermit:
-    "A residence permit is a signal for Brazilian tax residency. Reply **yes**, **no**, or **not sure**.",
+    "Ask this only when immigration status is tourist, none, or unclear. Reply **yes**, **no**, or **not sure**.",
   lastFilingCountry:
     "Last year's filing country is a clue for which rules apply. Reply with a country, **none**, or **not sure**.",
   filedBrazilianReturn:
     "Prior Brazilian filings affect what we expect this year. Reply **yes**, **no**, or **not sure**.",
   declaredPermanentExitBrazil:
-    "A saída definitiva (departure declaration) changes non-resident treatment. Reply **yes**, **no**, or **not applicable**.",
+    "A saída definitiva (permanent exit declaration) changes non-resident treatment. Reply **yes**, **no**, or **not applicable**.",
   maritalStatus:
-    "Marital status can affect filing and dependents. Reply **1–5** (single, married, stable union, divorced, widowed), or **not sure**.",
-  dependentsCount: "Dependents can affect deductions and filing. Reply with a whole number (**0** or more).",
+    "Marital status can affect filing and dependents. Reply **1–5** (single, married, stable union / união estável, divorced, widowed), or **not sure**.",
+  dependentsCount:
+    "How many people you claim as dependents for tax. Reply with a whole number (**0** or more).",
   daysInUSACalendarYear:
     "US days of presence feed the substantial-presence test. Reply **0–366** or **not sure**.",
   hasUSCitizenship: "US citizenship generally means a US filing obligation. Reply **yes** or **no**.",

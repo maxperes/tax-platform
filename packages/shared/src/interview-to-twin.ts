@@ -137,9 +137,16 @@ export function interviewToTwin(record: InterviewRecord): {
   const days = asString(record, "days_in_brazil");
   const immigration = asString(record, "immigration_status");
   const currentlyInBrazil = asString(record, "currently_in_brazil");
-  const selfResidentElsewhere = asString(record, "self_assessed_residency");
+  const dualResidency = asString(record, "dual_residency_risk");
+  const selfResidentElsewhere =
+    dualResidency === "yes" || asString(record, "self_assessed_residency") === "yes";
   const incomeTypes = asList(record, "income_types");
   const assetTypes = asList(record, "asset_types");
+  const ownsEntitiesLegacy = asString(record, "owns_entities") === "yes";
+  const hasCompanyAssets =
+    assetTypes.includes("foreign_companies") || assetTypes.includes("brazilian_companies");
+  const hasTrustAssets = assetTypes.includes("trust_interests");
+  const ownsEntities = ownsEntitiesLegacy || hasCompanyAssets || hasTrustAssets;
 
   const footprintCodes = new Set<string>();
   for (const code of [citizenship, residence, filing]) {
@@ -180,7 +187,6 @@ export function interviewToTwin(record: InterviewRecord): {
   const incomes = incomeTypes.map((category) => {
     const withholding = followWithholding(record, category);
     const paymentDate = followPaymentDate(record, category);
-    const ownsEntities = asString(record, "owns_entities") === "yes";
     const explicitTreatment = asString(record, `income_${category}_treatment`);
     return {
       category,
@@ -214,9 +220,8 @@ export function interviewToTwin(record: InterviewRecord): {
     };
   });
 
-  const ownsEntities = asString(record, "owns_entities") === "yes";
   const entities =
-    ownsEntities || assetTypes.includes("foreign_companies") || assetTypes.includes("brazilian_companies")
+    hasCompanyAssets || ownsEntitiesLegacy
       ? [
           {
             name: assetTypes.includes("brazilian_companies")
@@ -230,7 +235,7 @@ export function interviewToTwin(record: InterviewRecord): {
         ]
       : [];
   const trusts =
-    ownsEntities || assetTypes.includes("trust_interests")
+    hasTrustAssets || ownsEntitiesLegacy
       ? [
           {
             name: "Trust interest",
@@ -257,7 +262,7 @@ export function interviewToTwin(record: InterviewRecord): {
       currentlyFiscalResidentBrazil: undefined,
       currentlyFiscalResidentUSA: residence === "us" || citizenship === "us",
       otherFiscalResidencies:
-        selfResidentElsewhere === "yes" && residence && residence !== "us" && residence !== "br"
+        selfResidentElsewhere && residence && residence !== "us" && residence !== "br"
           ? [countryCodeToIso(residence)]
           : undefined,
       priorPermanentExitBrazil: asString(record, "filed_departure_declaration") === "yes"

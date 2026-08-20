@@ -172,10 +172,21 @@ export function BrazilStayEditor({ answers, onBatchUpdate, invalid, twinId, taxY
                 />
               </div>
               <div>
-                <label htmlFor={`stay-${index}-exit`} className="mb-1 block text-xs text-navy-700/70">
-                  Date left Brazil
-                  {exitOptional ? " (optional)" : ""}
-                </label>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <label htmlFor={`stay-${index}-exit`} className="block text-xs text-navy-700/70">
+                    Date left Brazil
+                    {exitOptional ? " (optional)" : ""}
+                  </label>
+                  {exitValue && (
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-navy-700/70 hover:text-alertRed"
+                      onClick={() => updateStay(index, "exitDate", "")}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
                 <Field
                   id={`stay-${index}-exit`}
                   type="date"

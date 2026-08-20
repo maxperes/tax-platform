@@ -23,6 +23,16 @@ const INTERVIEW_COUNTRIES = new Set([
   "au"
 ]);
 
+const IMMIGRATION_IMPLIES_PERMIT = new Set([
+  "temporary_visa",
+  "digital_nomad",
+  "work_visa",
+  "retirement_visa",
+  "family_reunion",
+  "permanent",
+  "citizen"
+]);
+
 const INCOME_TYPE_MAP: Record<string, string> = {
   salary: "salary",
   wages: "salary",
@@ -220,7 +230,15 @@ function mapFiscalToAnswers(fiscal: FiscalResidence): InterviewAnswers {
   if (fiscal.maritalStatus) answers.marital_status = fiscal.maritalStatus;
 
   const permit = boolToYesNo(fiscal.hasResidencePermit);
-  if (permit) answers.has_residence_permit = permit;
+  if (permit) {
+    answers.has_residence_permit = permit;
+  } else if (fiscal.immigrationStatus) {
+    if (IMMIGRATION_IMPLIES_PERMIT.has(fiscal.immigrationStatus)) {
+      answers.has_residence_permit = "yes";
+    } else if (fiscal.immigrationStatus === "tourist" || fiscal.immigrationStatus === "none") {
+      answers.has_residence_permit = "no";
+    }
+  }
 
   if (fiscal.lastFilingCountry) {
     answers.last_filing_country =
@@ -228,23 +246,27 @@ function mapFiscalToAnswers(fiscal: FiscalResidence): InterviewAnswers {
   }
 
   const filedBr = boolToYesNo(fiscal.filedBrazilianReturn);
-  if (filedBr) answers.filed_brazilian_return = filedBr;
+  if (filedBr) {
+    answers.filed_brazilian_return = filedBr;
+  } else if (answers.last_filing_country === "br") {
+    answers.filed_brazilian_return = "yes";
+  }
 
   const exit = boolToYesNo(fiscal.declaredPermanentExitBrazil);
   if (exit) answers.filed_departure_declaration = exit;
 
-  if (fiscal.isFiscalResidentUSA || fiscal.fiscalResidenceOtherCountry) {
-    answers.self_assessed_residency = "yes";
-  } else if (fiscal.isFiscalResidentBrazil && !fiscal.isFiscalResidentUSA) {
-    answers.self_assessed_residency = "no";
-  }
-
-  if (
-    (fiscal.isFiscalResidentBrazil && fiscal.isFiscalResidentUSA) ||
-    (fiscal.isFiscalResidentBrazil && fiscal.fiscalResidenceOtherCountry)
-  ) {
+  const residencyClaims = [
+    fiscal.isFiscalResidentBrazil === true,
+    fiscal.isFiscalResidentUSA === true,
+    fiscal.fiscalResidenceOtherCountry === true
+  ].filter(Boolean).length;
+  if (residencyClaims >= 2) {
     answers.dual_residency_risk = "yes";
-  } else if (fiscal.isFiscalResidentBrazil !== undefined) {
+  } else if (
+    fiscal.isFiscalResidentBrazil !== undefined ||
+    fiscal.isFiscalResidentUSA !== undefined ||
+    fiscal.fiscalResidenceOtherCountry !== undefined
+  ) {
     answers.dual_residency_risk = "no";
   }
 
@@ -332,8 +354,6 @@ function mapIncomesToAnswers(incomes: SessionIncomeFact[]): InterviewAnswers {
     (i) => (i.taxPaidOriginCountry ?? 0) > 0 || (i.withholdingTax ?? 0) > 0
   );
   answers.paid_foreign_tax = paidForeign ? "yes" : NOT_SURE;
-  const withheld = incomes.some((i) => (i.withholdingTax ?? 0) > 0);
-  answers.foreign_tax_withheld = withheld ? "yes" : NOT_SURE;
 
   return answers;
 }
@@ -349,11 +369,6 @@ function mapAssetsToAnswers(
   }
   if (trusts.length > 0) types.add("trust_interests");
   if (types.size > 0) answers.asset_types = Array.from(types);
-  if (trusts.length > 0 || types.has("foreign_companies") || types.has("brazilian_companies")) {
-    answers.owns_entities = "yes";
-  } else if (assets.length > 0) {
-    answers.owns_entities = "no";
-  }
   return answers;
 }
 

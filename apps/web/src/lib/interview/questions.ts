@@ -42,7 +42,7 @@ export const STEPS: StepDef[] = [
         options: [
           { value: "single", label: "Single" },
           { value: "married", label: "Married" },
-          { value: "stable_union", label: "Stable union" },
+          { value: "stable_union", label: "Stable union / civil partnership (união estável)" },
           { value: "divorced", label: "Divorced" },
           { value: "widowed", label: "Widowed" }
         ],
@@ -50,7 +50,8 @@ export const STEPS: StepDef[] = [
       },
       {
         id: "dependents",
-        label: "Number of dependents",
+        label: "How many people do you claim as dependents for tax purposes?",
+        help: "Children, a spouse, or others you claim. Enter 0 if none.",
         type: "number",
         placeholder: "0"
       }
@@ -73,13 +74,13 @@ export const STEPS: StepDef[] = [
         id: "brazil_stays",
         label: "Brazil entry and exit dates",
         help:
-          "Each row is one stay. Record every period in Brazil that might fall in a rolling twelve-month window. If you are still in Brazil, leave the last exit blank.",
+          "List every time you were in Brazil in the last couple of years. One stay per row. If you are still in Brazil, leave the last exit blank.",
         type: "stays",
         required: true
       },
       {
         id: "immigration_status",
-        label: "Type of immigration status",
+        label: "What is your Brazilian immigration status?",
         type: "select",
         options: [
           { value: "tourist", label: "Tourist or visitor" },
@@ -96,15 +97,8 @@ export const STEPS: StepDef[] = [
       },
       {
         id: "has_cpf",
-        label: "Do you have a CPF?",
+        label: "Do you have a Brazilian tax ID (CPF)?",
         help: "We only ask whether you have one. Never enter the number itself.",
-        type: "radio",
-        options: YES_NO_UNSURE,
-        allowNotSure: true
-      },
-      {
-        id: "has_residence_permit",
-        label: "Do you have a Brazilian residence permit?",
         type: "radio",
         options: YES_NO_UNSURE,
         allowNotSure: true
@@ -133,7 +127,7 @@ export const STEPS: StepDef[] = [
       },
       {
         id: "filed_departure_declaration",
-        label: "Have you filed a Brazilian departure declaration?",
+        label: "Have you filed a Brazilian permanent exit declaration (saída definitiva)?",
         help: "Relevant mainly for people who previously lived in Brazil and left.",
         type: "radio",
         options: [
@@ -144,15 +138,9 @@ export const STEPS: StepDef[] = [
         allowNotSure: true
       },
       {
-        id: "self_assessed_residency",
-        label: "Do you consider yourself a tax resident of another country?",
-        type: "radio",
-        options: YES_NO_UNSURE,
-        allowNotSure: true
-      },
-      {
         id: "dual_residency_risk",
-        label: "Could more than one country consider you a tax resident?",
+        label: "Could more than one country treat you as a tax resident?",
+        help: "For example Brazil and the country where you live, or Brazil and the United States.",
         type: "radio",
         options: YES_NO_UNSURE,
         allowNotSure: true
@@ -166,7 +154,7 @@ export const STEPS: StepDef[] = [
     questions: [
       {
         id: "income_types",
-        label: "Income sources",
+        label: "Which kinds of income did you receive?",
         help: "Select all that apply. The next step asks only about the ones you choose.",
         type: "multiselect",
         options: INCOME_OPTIONS,
@@ -181,8 +169,8 @@ export const STEPS: StepDef[] = [
     questions: [
       {
         id: "asset_types",
-        label: "Asset categories",
-        help: "Select all that apply.",
+        label: "Which kinds of assets do you hold?",
+        help: "Select all that apply, including companies and trusts if you own them.",
         type: "multiselect",
         options: ASSET_OPTIONS,
         required: true
@@ -192,61 +180,23 @@ export const STEPS: StepDef[] = [
   {
     id: "taxes_documentation",
     title: "Taxes and documentation",
-    intro: "What you have already paid abroad, and what paperwork you can lay your hands on.",
+    intro: "What you have already paid abroad, and whether you still need to gather paperwork.",
     questions: [
       {
         id: "paid_foreign_tax",
-        label: "Did you pay income tax outside Brazil?",
-        type: "radio",
-        options: YES_NO_UNSURE,
-        allowNotSure: true
-      },
-      {
-        id: "foreign_tax_withheld",
-        label: "Was foreign tax withheld at source?",
-        type: "radio",
-        options: YES_NO_UNSURE,
-        allowNotSure: true
-      },
-      {
-        id: "has_foreign_returns",
-        label: "Do you have tax returns from another country?",
-        type: "radio",
-        options: YES_NO_UNSURE,
-        allowNotSure: true
-      },
-      {
-        id: "has_statements",
-        label: "Do you have bank and investment statements?",
-        type: "radio",
-        options: YES_NO_UNSURE,
-        allowNotSure: true
-      },
-      {
-        id: "has_retirement_statements",
-        label: "Do you have retirement income statements?",
-        type: "radio",
-        options: [
-          { value: "yes", label: "Yes" },
-          { value: "no", label: "No" },
-          { value: "not_applicable", label: "Not applicable" }
-        ],
-        allowNotSure: true
-      },
-      {
-        id: "owns_entities",
-        label: "Do you own foreign companies or trusts?",
+        label: "Did any country outside Brazil take tax from your income?",
+        help: "Include tax an employer, bank, or broker already took out before you were paid.",
         type: "radio",
         options: YES_NO_UNSURE,
         allowNotSure: true
       },
       {
         id: "missing_documents",
-        label: "Are any documents missing?",
+        label: "Do you still need to gather tax or bank paperwork?",
         type: "radio",
         options: [
-          { value: "yes", label: "Yes, several" },
-          { value: "some", label: "A few" },
+          { value: "yes", label: "Yes, several items" },
+          { value: "some", label: "A few items" },
           { value: "no", label: "No, I have everything" }
         ],
         allowNotSure: true
@@ -296,7 +246,7 @@ export function incomeDetailStep(selected: string[]): StepDef | null {
       },
       {
         id: `income_${option.value}_withholding`,
-        label: `Tax already withheld on ${option.label.toLowerCase()}`,
+        label: `Tax already taken out on ${option.label.toLowerCase()}`,
         help: "Leave blank if none or you are not sure.",
         type: "number" as const,
         placeholder: "0",
@@ -338,13 +288,32 @@ export function assetDetailStep(selected: string[]): StepDef | null {
   };
 }
 
+/** Immigration statuses that usually mean a Brazilian residence permit is held. */
+export const IMMIGRATION_IMPLIES_PERMIT = new Set([
+  "temporary_visa",
+  "digital_nomad",
+  "work_visa",
+  "retirement_visa",
+  "family_reunion",
+  "permanent",
+  "citizen"
+]);
+
 export function stepsForInterview(
   selectedIncome: string[],
   extras: {
     assetTypes?: string[];
+    lastFilingCountry?: string;
   } = {}
 ): StepDef[] {
-  const steps = [...STEPS];
+  const steps = STEPS.map((step) => {
+    if (step.id !== "tax_residency") return step;
+    if (extras.lastFilingCountry !== "br") return step;
+    return {
+      ...step,
+      questions: step.questions.filter((question) => question.id !== "filed_brazilian_return")
+    };
+  });
   const income = incomeDetailStep(selectedIncome);
   if (income) {
     const idx = steps.findIndex((step) => step.id === "assets");
@@ -357,4 +326,3 @@ export function stepsForInterview(
   }
   return steps;
 }
-

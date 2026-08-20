@@ -119,7 +119,7 @@ function PatrimonyForm({
 }) {
   const [draft, setDraft] = useState(row);
   return (
-    <div className="mb-3 rounded-lg border border-surface-border bg-surface-muted p-3 space-y-2 text-xs">
+    <div className="mb-3 space-y-2 rounded-md border border-surface-border bg-white p-4 text-xs">
       <p className="text-navy-700 font-medium">Add asset / patrimony</p>
       <input placeholder="Name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="w-full rounded border border-surface-border bg-white px-2 py-1" />
       <div className="grid grid-cols-2 gap-2">
@@ -131,7 +131,7 @@ function PatrimonyForm({
         <input placeholder="Value" value={draft.acquisitionValue} onChange={(e) => setDraft({ ...draft, acquisitionValue: e.target.value })} className="rounded border border-surface-border bg-white px-2 py-1" />
         <input placeholder="Currency" value={draft.acquisitionCurrency} onChange={(e) => setDraft({ ...draft, acquisitionCurrency: e.target.value })} className="rounded border border-surface-border bg-white px-2 py-1 uppercase" />
       </div>
-      <button type="button" disabled={saving} onClick={() => onSave(draft)} className="rounded border border-accent bg-accent-light px-3 py-1 text-accent-dark disabled:opacity-50">
+      <button type="button" disabled={saving} onClick={() => onSave(draft)} className="rounded-md border border-accent/40 bg-accent-light px-3 py-1.5 text-xs font-medium text-accent-dark disabled:opacity-50">
         {saving ? "Saving..." : "Save asset"}
       </button>
       {error && <p className="text-alertRed">{error}</p>}
@@ -153,7 +153,7 @@ function TransferForm({
 }) {
   const [draft, setDraft] = useState(row);
   return (
-    <div className="mb-3 rounded-lg border border-surface-border bg-surface-muted p-3 space-y-2 text-xs">
+    <div className="mb-3 space-y-2 rounded-md border border-surface-border bg-white p-4 text-xs">
       <p className="text-navy-700 font-medium">Add international transfer</p>
       <div className="grid grid-cols-2 gap-2">
         <input placeholder="From" value={draft.fromCountry} onChange={(e) => setDraft({ ...draft, fromCountry: e.target.value })} className="rounded border border-surface-border bg-white px-2 py-1 uppercase" />
@@ -172,7 +172,7 @@ function TransferForm({
         <option value="loan">Loan</option>
         <option value="unknown">Unknown</option>
       </select>
-      <button type="button" disabled={saving} onClick={() => onSave(draft)} className="rounded border border-accent bg-accent-light px-3 py-1 text-accent-dark disabled:opacity-50">
+      <button type="button" disabled={saving} onClick={() => onSave(draft)} className="rounded-md border border-accent/40 bg-accent-light px-3 py-1.5 text-xs font-medium text-accent-dark disabled:opacity-50">
         {saving ? "Saving..." : "Save transfer"}
       </button>
       {error && <p className="text-alertRed">{error}</p>}
@@ -193,7 +193,7 @@ function TrustForm({
 }) {
   const [draft, setDraft] = useState(row);
   return (
-    <div className="mb-3 rounded-lg border border-surface-border bg-surface-muted p-3 space-y-2 text-xs">
+    <div className="mb-3 space-y-2 rounded-md border border-surface-border bg-white p-4 text-xs">
       <p className="text-navy-700 font-medium">Register trust structure</p>
       <input placeholder="Trust name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="w-full rounded border border-surface-border bg-white px-2 py-1" />
       <div className="grid grid-cols-2 gap-2">
@@ -204,7 +204,7 @@ function TrustForm({
           <option value="unknown">Unknown</option>
         </select>
       </div>
-      <button type="button" disabled={saving} onClick={() => onSave(draft)} className="rounded border border-accent bg-accent-light px-3 py-1 text-accent-dark disabled:opacity-50">
+      <button type="button" disabled={saving} onClick={() => onSave(draft)} className="rounded-md border border-accent/40 bg-accent-light px-3 py-1.5 text-xs font-medium text-accent-dark disabled:opacity-50">
         {saving ? "Saving..." : "Save trust"}
       </button>
       {error && <p className="text-alertRed">{error}</p>}
@@ -225,7 +225,7 @@ function EntitySimForm({
 }) {
   const [draft, setDraft] = useState(row);
   return (
-    <div className="mb-3 rounded-lg border border-surface-border bg-surface-muted p-3 space-y-2 text-xs">
+    <div className="mb-3 space-y-2 rounded-md border border-surface-border bg-white p-4 text-xs">
       <p className="text-navy-700 font-medium">PF vs PJ simulation</p>
       <input placeholder="Scenario name" value={draft.scenarioName} onChange={(e) => setDraft({ ...draft, scenarioName: e.target.value })} className="w-full rounded border border-surface-border bg-white px-2 py-1" />
       <div className="grid grid-cols-2 gap-2">
@@ -236,7 +236,7 @@ function EntitySimForm({
         <input placeholder="PJ effective rate (0.15)" value={draft.estimatedEffectiveTaxRate} onChange={(e) => setDraft({ ...draft, estimatedEffectiveTaxRate: e.target.value })} className="rounded border border-surface-border bg-white px-2 py-1" />
         <input placeholder="Gross income BRL" value={draft.grossIncomeBrl} onChange={(e) => setDraft({ ...draft, grossIncomeBrl: e.target.value })} className="rounded border border-surface-border bg-white px-2 py-1" />
       </div>
-      <button type="button" disabled={saving} onClick={() => onSave(draft)} className="rounded border border-accent bg-accent-light px-3 py-1 text-accent-dark disabled:opacity-50">
+      <button type="button" disabled={saving} onClick={() => onSave(draft)} className="rounded-md border border-accent/40 bg-accent-light px-3 py-1.5 text-xs font-medium text-accent-dark disabled:opacity-50">
         {saving ? "Saving..." : "Run simulation"}
       </button>
       {error && <p className="text-alertRed">{error}</p>}

@@ -1,4 +1,5 @@
 import type { RefObject } from "react";
+import { Bell } from "lucide-react";
 import { renderChatEmphasis } from "../../lib/chat-utils";
 import type { SessionNotice } from "../../lib/chat-notices";
 
@@ -18,11 +19,13 @@ export function NotificationCenter({ open, notices, readIds, onToggle, container
       <button
         type="button"
         onClick={onToggle}
-        className="rounded-lg border border-surface-border bg-white px-3 py-1.5 text-xs text-navy hover:border-accent flex items-center gap-2"
+        className="flex items-center gap-2 rounded-md border border-surface-border bg-white p-2 text-xs font-medium text-navy hover:border-accent sm:px-3 sm:py-1.5"
+        aria-label="Notifications"
         aria-expanded={open}
         aria-haspopup="dialog"
       >
-        Notifications
+        <Bell className="h-4 w-4 sm:hidden" aria-hidden="true" />
+        <span className="hidden sm:inline">Notifications</span>
         {unreadCount > 0 && (
           <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-white">
             {unreadCount}
@@ -31,7 +34,7 @@ export function NotificationCenter({ open, notices, readIds, onToggle, container
       </button>
       {open && (
         <div
-          className="absolute right-0 top-full z-30 mt-1 w-[min(22rem,calc(100vw-2rem))] max-h-[min(24rem,70vh)] overflow-y-auto rounded-lg border border-surface-border bg-white shadow-xl"
+          className="absolute right-0 top-full z-30 mt-1.5 w-[min(22rem,calc(100vw-2rem))] max-h-[min(24rem,70vh)] overflow-y-auto rounded-md border border-surface-border bg-white shadow-card"
           role="dialog"
           aria-modal="true"
           aria-label="Notification center"
@@ -54,7 +57,7 @@ export function NotificationCenter({ open, notices, readIds, onToggle, container
                 >
                   <p className="font-semibold text-navy">{n.title}</p>
                   <p className="mt-1 text-navy-700 leading-snug">
-                    {n.kind === "review" ? renderChatEmphasis(n.body) : n.body}
+                    {n.kind === "welcome" ? n.body : renderChatEmphasis(n.body)}
                   </p>
                 </div>
               ))

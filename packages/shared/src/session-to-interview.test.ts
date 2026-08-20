@@ -133,7 +133,7 @@ describe("sessionFactsToInterviewRecord", () => {
     expect(record.answers.asset_types).toEqual(
       expect.arrayContaining(["brokerage", "real_estate", "trust_interests"])
     );
-    expect(record.answers.owns_entities).toBe("yes");
+    expect(record.answers.owns_entities).toBeUndefined();
   });
 
   it("returns empty when no facts", () => {

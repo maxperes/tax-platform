@@ -31,6 +31,36 @@ function optionsFor(selected: string[], catalogue: Option[]): Option[] {
   return catalogue.filter((option) => selected.includes(option.value));
 }
 
+const IMMIGRATION_IMPLIES_PERMIT = new Set([
+  "temporary_visa",
+  "digital_nomad",
+  "work_visa",
+  "retirement_visa",
+  "family_reunion",
+  "permanent",
+  "citizen",
+]);
+
+function ownsCompaniesOrTrusts(record: DemoRecord): boolean {
+  const assets = asList(record, "asset_types");
+  return (
+    assets.includes("foreign_companies") ||
+    assets.includes("brazilian_companies") ||
+    assets.includes("trust_interests") ||
+    asString(record, "owns_entities") === "yes"
+  );
+}
+
+function inferredResidencePermit(record: DemoRecord): string | undefined {
+  const explicit = asString(record, "has_residence_permit");
+  if (explicit) return explicit;
+  const status = asString(record, "immigration_status");
+  if (!status || status === NOT_SURE) return undefined;
+  if (IMMIGRATION_IMPLIES_PERMIT.has(status)) return "yes";
+  if (status === "tourist" || status === "none") return "no";
+  return undefined;
+}
+
 /* -------------------------------------------------------------- progress */
 
 export function stepStatus(record: DemoRecord, stepIndex: number): StepStatus {
@@ -111,7 +141,7 @@ export interface ResidencySignal {
 
 export function residencySignals(record: DemoRecord): ResidencySignal[] {
   const tripCount = Number(asString(record, "brazil_trip_count"));
-  const permit = asString(record, "has_residence_permit");
+  const permit = inferredResidencePermit(record);
   const dual = asString(record, "dual_residency_risk");
   const hasStays = Number.isInteger(tripCount) && tripCount >= 1;
 
@@ -125,7 +155,7 @@ export function residencySignals(record: DemoRecord): ResidencySignal[] {
       label: "Residence permit",
       value:
         permit === "yes" ? "Held" : permit === "no" ? "Not held" : "Not confirmed",
-      note: "Immigration status and tax residency are assessed separately.",
+      note: "Inferred from Brazilian immigration status when not answered separately.",
     },
     {
       label: "Possible dual residency",
@@ -350,7 +380,7 @@ export function preliminaryFindings(record: DemoRecord): Finding[] {
     });
   }
 
-  if (asString(record, "owns_entities") === "yes") {
+  if (ownsCompaniesOrTrusts(record)) {
     findings.push({
       label: "Foreign companies or trusts",
       status: "potential_tax_issue",
@@ -418,9 +448,7 @@ export function analysisAreas(record: DemoRecord): AnalysisArea[] {
     },
     {
       label: "Corporate interests",
-      relevant:
-        has(assets, "foreign_companies", "brazilian_companies") ||
-        asString(record, "owns_entities") === "yes",
+      relevant: ownsCompaniesOrTrusts(record),
       note: "Ownership structures may carry additional reporting duties.",
     },
     {
@@ -464,11 +492,7 @@ export function preliminaryObservations(record: DemoRecord): string[] {
       "Retirement income may receive different treatment depending on its legal nature and source.",
     );
   }
-  if (
-    assets.includes("foreign_companies") ||
-    assets.includes("trust_interests") ||
-    asString(record, "owns_entities") === "yes"
-  ) {
+  if (ownsCompaniesOrTrusts(record)) {
     observations.push(
       "Foreign company or trust interests may create additional reporting obligations.",
     );
@@ -545,7 +569,7 @@ export function attentionIndicators(record: DemoRecord): AttentionIndicator[] {
     },
   ];
 
-  if (asString(record, "owns_entities") === "yes") {
+  if (ownsCompaniesOrTrusts(record)) {
     indicators.push({
       label: "Entity ownership",
       level: "professional_analysis_required",

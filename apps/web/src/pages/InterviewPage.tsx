@@ -99,7 +99,10 @@ export function InterviewPage() {
 
   const setAnswer = (id: string, value: AnswerValue | undefined) => {
     setRecord((current) => {
-      const next = { ...current, answers: { ...current.answers, [id]: value } };
+      const answers = { ...current.answers };
+      if (value === undefined) delete answers[id];
+      else answers[id] = value;
+      const next = { ...current, answers };
       scheduleSave(next);
       return next;
     });
@@ -107,7 +110,12 @@ export function InterviewPage() {
 
   const setAnswers = (patch: Record<string, AnswerValue | undefined>) => {
     setRecord((current) => {
-      const next = { ...current, answers: { ...current.answers, ...patch } };
+      const answers = { ...current.answers };
+      for (const [id, value] of Object.entries(patch)) {
+        if (value === undefined) delete answers[id];
+        else answers[id] = value;
+      }
+      const next = { ...current, answers };
       scheduleSave(next);
       return next;
     });

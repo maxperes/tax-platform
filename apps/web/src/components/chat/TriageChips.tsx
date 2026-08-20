@@ -18,7 +18,7 @@ export function TriageChips({ visible, disabled, onSelect }: Props) {
             type="button"
             disabled={disabled}
             onClick={() => onSelect(String(i + 1))}
-            className="rounded-full border border-accent bg-accent-light px-3 py-1 text-xs text-accent-dark hover:border-accent disabled:opacity-50"
+            className="rounded-md border border-accent/40 bg-accent-light px-3 py-1.5 text-xs font-medium text-accent-dark hover:border-accent disabled:opacity-50"
           >
             {i + 1}. {opt.label}
           </button>

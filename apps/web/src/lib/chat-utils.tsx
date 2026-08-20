@@ -30,7 +30,3 @@ export function formatMoney(n: unknown, currency = ""): string {
   const s = Math.abs(num).toLocaleString("en-US", { maximumFractionDigits: 2 });
   return currency ? `${s} ${currency}` : s;
 }
-
-export function roleLabel(role: string): string {
-  return role === "user" ? "You" : role === "assistant" ? "Assistant" : role;
-}

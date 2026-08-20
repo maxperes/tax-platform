@@ -54,7 +54,7 @@ export async function streamSessionMessage(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error((err as { error?: string }).error || res.statusText);
+    throw new Error(formatApiErrorBody(err, res.statusText));
   }
   const reader = res.body?.getReader();
   if (!reader) {
@@ -96,6 +96,44 @@ function authHeaders(extra?: HeadersInit): HeadersInit {
   };
 }
 
+type ZodFlattenedError = {
+  formErrors?: string[];
+  fieldErrors?: Record<string, string[] | undefined>;
+};
+
+function formatZodFlattenedError(payload: ZodFlattenedError): string | null {
+  const formErrors = payload.formErrors ?? [];
+  const fieldMsgs = Object.entries(payload.fieldErrors ?? {}).flatMap(([field, msgs]) =>
+    (msgs ?? []).map((msg) => (field ? `${field}: ${msg}` : msg))
+  );
+  const messages = [...formErrors, ...fieldMsgs].filter(Boolean);
+  return messages.length > 0 ? messages.join("; ") : null;
+}
+
+/** Turn `{ error: string | ZodFlatten }` (and optional `details`) into a readable message. */
+export function formatApiErrorBody(body: unknown, fallback: string): string {
+  if (!body || typeof body !== "object") return fallback;
+  const { error, details } = body as {
+    error?: string | ZodFlattenedError;
+    details?: ZodFlattenedError;
+  };
+
+  if (typeof error === "string") {
+    if (details && typeof details === "object") {
+      const fromDetails = formatZodFlattenedError(details);
+      if (fromDetails) return fromDetails;
+    }
+    return error;
+  }
+
+  if (error && typeof error === "object") {
+    const fromError = formatZodFlattenedError(error);
+    if (fromError) return fromError;
+  }
+
+  return fallback;
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: HeadersInit = {
     "Content-Type": "application/json",
@@ -111,7 +149,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
       }
     }
     const err = await res.json().catch(() => ({}));
-    throw new Error((err as { error?: string }).error || res.statusText);
+    throw new Error(formatApiErrorBody(err, res.statusText));
   }
   if (res.status === 204) {
     return undefined as T;
@@ -127,7 +165,7 @@ export async function downloadAuthenticated(path: string, filename: string): Pro
   const res = await fetch(path, { headers: authHeaders() });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error((err as { error?: string }).error || res.statusText);
+    throw new Error(formatApiErrorBody(err, res.statusText));
   }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);

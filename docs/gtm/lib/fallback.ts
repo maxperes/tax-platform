@@ -19,11 +19,9 @@ export const SAMPLE_RECORD: DemoRecord = {
     brazil_trip_1_entry: "2024-02-19",
     immigration_status: "retirement_visa",
     has_cpf: "yes",
-    has_residence_permit: "yes",
     last_filing_country: "us",
     filed_brazilian_return: "no",
     filed_departure_declaration: "not_applicable",
-    self_assessed_residency: "yes",
     dual_residency_risk: "not_sure",
     income_types: [
       "social_security",
@@ -39,11 +37,6 @@ export const SAMPLE_RECORD: DemoRecord = {
       "real_estate",
     ],
     paid_foreign_tax: "yes",
-    foreign_tax_withheld: "yes",
-    has_foreign_returns: "yes",
-    has_statements: "yes",
-    has_retirement_statements: "yes",
-    owns_entities: "no",
     missing_documents: "some",
   },
   documents: {

@@ -3,27 +3,22 @@ import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ActionBanner } from "../components/chat/ActionBanner";
 import { ChatInput } from "../components/chat/ChatInput";
+import { ChatSessionHeader } from "../components/chat/ChatSessionHeader";
+import { ChatWorkspacePanel, hasChatWorkspaceContent } from "../components/chat/ChatWorkspacePanel";
 import { DomainModuleEditor } from "../components/chat/DomainModuleEditor";
 import { DeductionEditor, type DeductionRow } from "../components/chat/DeductionEditor";
 import { IncomeEditor, type IncomeRow } from "../components/chat/IncomeEditor";
 import { MessageList } from "../components/chat/MessageList";
-import { NotificationCenter } from "../components/chat/NotificationCenter";
 import { SessionErrorView } from "../components/chat/SessionErrorView";
-import { StepPills } from "../components/chat/StepPills";
 import { TriageChips } from "../components/chat/TriageChips";
 import {
-  NOTICE_ADDITIONAL_REVIEW,
-  NOTICE_WELCOME_BACK,
   NOTICE_RULES_OUTDATED,
   activeSessionNotices,
   loadNoticeReadIds,
-  reviewBannerStorageKey,
-  rulesFreshnessBannerStorageKey,
-  saveNoticeReadIds,
-  welcomeBannerStorageKey
+  saveNoticeReadIds
 } from "../lib/chat-notices";
 import { WHY_HINT_BY_STATE, formatCalcStatus, stepLabelForState, stepProgress } from "../lib/chat-constants";
-import { formatMoney, renderChatEmphasis } from "../lib/chat-utils";
+import { formatMoney } from "../lib/chat-utils";
 import { api, downloadAuthenticated, getToken, signOut, streamSessionMessage } from "../api";
 import { fetchTaxReport, taxReportQueryKey } from "../lib/tax-report";
 
@@ -49,26 +44,21 @@ export function ChatPage() {
   const [typingDots, setTypingDots] = useState(".");
   const [streamingText, setStreamingText] = useState("");
   const [lastSavedAt, setLastSavedAt] = useState("");
-  const [lastSavedSnippet, setLastSavedSnippet] = useState("");
   const [chatError, setChatError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
-  const [showIncomeEditor, setShowIncomeEditor] = useState(false);
   const [incomeDraftRows, setIncomeDraftRows] = useState<IncomeRow[]>([]);
   const [savingIncomeId, setSavingIncomeId] = useState("");
   const [incomeError, setIncomeError] = useState("");
-  const [showDeductionEditor, setShowDeductionEditor] = useState(false);
   const [deductionDraftRows, setDeductionDraftRows] = useState<DeductionRow[]>([]);
   const [savingDeductionId, setSavingDeductionId] = useState("");
   const [deductionError, setDeductionError] = useState("");
   const [domainSaving, setDomainSaving] = useState(false);
   const [domainError, setDomainError] = useState("");
   const [navigatingStep, setNavigatingStep] = useState(false);
-  const [hideWelcomeBanner, setHideWelcomeBanner] = useState(false);
-  const [hideReviewBanner, setHideReviewBanner] = useState(false);
-  const [hideRulesBanner, setHideRulesBanner] = useState(false);
   const [noticeCenterOpen, setNoticeCenterOpen] = useState(false);
   const [readNoticeIds, setReadNoticeIds] = useState<Set<string>>(() => new Set());
+  const [mobileWorkspaceOpen, setMobileWorkspaceOpen] = useState(false);
   const noticeCenterRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -189,15 +179,12 @@ export function ChatPage() {
     setStreamingText("");
     setTypingDots(".");
     setLastSavedAt("");
-    setLastSavedSnippet("");
     setChatError(null);
     setActionError(null);
     setSending(false);
     setResetting(false);
+    setMobileWorkspaceOpen(false);
     if (sessionId) {
-      setHideWelcomeBanner(localStorage.getItem(welcomeBannerStorageKey(sessionId)) === "1");
-      setHideReviewBanner(localStorage.getItem(reviewBannerStorageKey(sessionId)) === "1");
-      setHideRulesBanner(localStorage.getItem(rulesFreshnessBannerStorageKey(sessionId)) === "1");
       setReadNoticeIds(loadNoticeReadIds(sessionId));
     }
   }, [sessionId]);
@@ -209,12 +196,6 @@ export function ChatPage() {
   useEffect(() => {
     setDeductionDraftRows(deductionRows);
   }, [deductionRows]);
-
-  useEffect(() => {
-    if (!sessionId || !session?.requiresAdditionalReview) return;
-    localStorage.removeItem(reviewBannerStorageKey(sessionId));
-    setHideReviewBanner(false);
-  }, [sessionId, session?.requiresAdditionalReview]);
 
   useEffect(() => {
     if (!noticeCenterOpen) return;
@@ -238,6 +219,7 @@ export function ChatPage() {
     if (!sessionId || !session) return;
     setReadNoticeIds((prev) => {
       const applicable = new Set(activeSessionNotices(session).map((n) => n.id));
+      if (rulesFreshness?.isRulesOutdated) applicable.add(NOTICE_RULES_OUTDATED.id);
       const next = new Set<string>();
       let pruned = false;
       for (const id of prev) {
@@ -248,11 +230,12 @@ export function ChatPage() {
       saveNoticeReadIds(sessionId, next);
       return next;
     });
-  }, [sessionId, session?.messages.length, session?.requiresAdditionalReview]);
+  }, [sessionId, session?.messages.length, session?.requiresAdditionalReview, rulesFreshness?.isRulesOutdated]);
 
   useEffect(() => {
     if (!noticeCenterOpen || !sessionId || !session) return;
     const ids = activeSessionNotices(session).map((n) => n.id);
+    if (rulesFreshness?.isRulesOutdated) ids.push(NOTICE_RULES_OUTDATED.id);
     setReadNoticeIds((prev) => {
       const next = new Set(prev);
       let added = false;
@@ -266,7 +249,7 @@ export function ChatPage() {
       saveNoticeReadIds(sessionId, next);
       return next;
     });
-  }, [noticeCenterOpen, sessionId, session]);
+  }, [noticeCenterOpen, sessionId, session, rulesFreshness?.isRulesOutdated]);
 
   async function sendMessage(userText: string) {
     if (!sessionId || !session || !userText.trim()) return;
@@ -306,7 +289,6 @@ export function ChatPage() {
       setOptimisticMessages([]);
       setStreamingText("");
       setLastSavedAt(new Date().toLocaleTimeString());
-      setLastSavedSnippet(userText.slice(0, 72));
     } catch (err) {
       setOptimisticMessages((prev) => prev.filter((m) => m.id !== optimisticUserMessage.id));
       setStreamingText("");
@@ -362,10 +344,7 @@ export function ChatPage() {
   const showResultsSummary = inReportPhase && Boolean(fullReport);
   const showMapCta = Boolean(session);
   const mapButtonClass =
-    "inline-flex items-center rounded-lg border border-accent bg-accent-light px-3 py-1.5 text-xs font-medium text-accent-dark hover:bg-accent-light disabled:opacity-50";
-
-  const headerActionClass =
-    "inline-flex items-center rounded-lg border border-surface-border bg-white px-3 py-1.5 text-xs text-navy hover:border-accent no-underline";
+    "inline-flex items-center rounded-md border border-accent/40 bg-accent-light px-3 py-1.5 text-xs font-medium text-accent-dark hover:bg-accent-light/80 disabled:opacity-50";
 
   function prefetchReport(reportId: string) {
     void qc.prefetchQuery({
@@ -389,14 +368,14 @@ export function ChatPage() {
         <a
           href={`/report/${reportId}`}
           onMouseEnter={() => prefetchReport(reportId)}
-          className="inline-flex items-center rounded-lg border border-accent bg-accent-light px-3 py-1.5 text-xs font-medium text-accent-dark hover:bg-accent-light no-underline"
+          className="inline-flex items-center rounded-md border border-accent/40 bg-accent-light px-3 py-1.5 text-xs font-medium text-accent-dark hover:bg-accent-light/80 no-underline"
         >
           View filing report
         </a>
         <button
           type="button"
           onClick={() => void downloadLatestReportJson()}
-          className="rounded-lg border border-surface-border px-3 py-1.5 text-xs hover:border-accent"
+          className="rounded-md border border-surface-border px-3 py-1.5 text-xs font-medium hover:border-accent"
         >
           Download JSON
         </button>
@@ -450,7 +429,6 @@ export function ChatPage() {
 
   function addIncomeDraftRow() {
     if (!session) return;
-    setShowIncomeEditor(true);
     setIncomeDraftRows((prev) => [
       {
         id: `new-${Date.now()}`,
@@ -522,7 +500,6 @@ export function ChatPage() {
 
   function addDeductionDraftRow() {
     if (!session) return;
-    setShowDeductionEditor(true);
     setDeductionDraftRows((prev) => [
       {
         id: `new-${Date.now()}`,
@@ -704,213 +681,236 @@ export function ChatPage() {
   const displayedMessages = [...session.messages, ...optimisticMessages];
   const progress = stepProgress(session.state);
   const whyHint = WHY_HINT_BY_STATE[session.state] ?? "We will keep this short and one question at a time.";
-  const sessionNotices = activeSessionNotices(session);
+  const sessionNotices = [
+    ...activeSessionNotices(session),
+    ...(rulesFreshness?.isRulesOutdated
+      ? [
+          {
+            id: NOTICE_RULES_OUTDATED.id,
+            title: NOTICE_RULES_OUTDATED.title,
+            body: NOTICE_RULES_OUTDATED.body,
+            kind: "rules" as const
+          }
+        ]
+      : [])
+  ];
   const showTriageChips = session.state === "fiscal_residence" && session.messages.length <= 1;
   const busy = sending || resetting || navigatingStep || syncingMap;
+  const workspaceTitle =
+    session.state === "complete" || session.state === "report"
+      ? "Report"
+      : stepLabelForState(session.state);
 
-  return (
-    <div className="h-screen overflow-hidden bg-surface-muted">
-      <div className="mx-auto flex h-full max-w-3xl flex-col border-x border-surface-border bg-white">
-        <header className="relative border-b border-surface-border px-3 sm:px-4 py-3 sm:py-4 max-h-[45vh] overflow-y-auto chat-scrollbar">
-          <div className="flex items-start justify-between gap-3">
-            <h1 className="text-lg sm:text-xl font-semibold">Tax intake</h1>
-            <div ref={noticeCenterRef} className="flex flex-wrap items-center justify-end gap-2">
-              <NotificationCenter
-                open={noticeCenterOpen}
-                notices={sessionNotices}
-                readIds={readNoticeIds}
-                onToggle={() => setNoticeCenterOpen((o) => !o)}
-                containerRef={noticeCenterRef}
-              />
-              <a href="/sessions" className={headerActionClass}>
-                Home
-              </a>
-              <a href="/start" className={headerActionClass}>
-                Assessment
-              </a>
-              <a href="/privacy" className={headerActionClass}>
-                Privacy
-              </a>
-              <button type="button" onClick={handleSignOut} className="rounded-lg border border-surface-border bg-white px-3 py-1.5 text-xs text-navy hover:border-accent">
-                Sign out
-              </button>
-              <button type="button" onClick={() => void startOver()} disabled={resetting} className="rounded-lg border border-surface-border bg-white px-3 py-1.5 text-xs text-navy hover:border-accent disabled:opacity-50">
-                {resetting ? "Starting over..." : "Start over"}
-              </button>
-            </div>
-          </div>
-          <p className="text-sm text-navy-700/75 mt-1">
-            Year {session.taxYear} · Step <span className="font-medium text-navy">{stepLabelForState(session.state)}</span> ·{" "}
-            {progress.index}/{progress.total}
-          </p>
-          <p className="mt-2 text-xs text-navy-700/75">
-            {whyHint} Your answers also build the same 360° tax map as the structured interview.
-          </p>
-          <StepPills currentState={session.state} progressIndex={progress.index} disabled={busy} onJump={(s) => void jumpToStep(s)} />
-          {showMapCta && (
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={syncingMap}
-                onClick={() => void openTaxMap()}
-                className={mapButtonClass}
-              >
+  const resultsBlock = (
+    <>
+      {showResultsSummary && fullReport && (
+        <div className="space-y-3 rounded-md border border-surface-border bg-white px-4 py-4 text-sm text-navy">
+          <p className="font-medium text-navy">Results summary</p>
+          {fullReport.summaryJson.annualTaxEstimates?.map((est, i) => (
+            <p key={i} className="text-xs text-navy-700">
+              <strong className="text-navy">{est.jurisdiction}</strong>: net due {formatMoney(est.netTaxDue, est.currency)} (
+              {formatCalcStatus(est.calculationStatus)})
+            </p>
+          ))}
+          {latestReportMeta && reportActionButtons(latestReportMeta.id)}
+        </div>
+      )}
+      {session.state === "report" && !latestReportMeta && (
+        <div className="rounded-md border border-surface-border bg-white px-4 py-4">
+          <button
+            type="button"
+            disabled={sending}
+            onClick={() => send("generate the report")}
+            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-dark disabled:opacity-50"
+          >
+            Generate report
+          </button>
+        </div>
+      )}
+      {session.state === "complete" && !(fullReport && latestReportMeta) && (
+        <div className="space-y-2 rounded-md border border-surface-border bg-white px-4 py-4 text-xs text-navy">
+          {latestReportMeta ? (
+            reportActionButtons(latestReportMeta.id)
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              <button type="button" disabled={syncingMap} onClick={() => void openTaxMap()} className={mapButtonClass}>
                 {syncingMap ? "Building map…" : "View 360° tax map"}
               </button>
-              <span className="text-[11px] text-navy-700/65">
-                Syncs this intake into your cross-border map.
-              </span>
-            </div>
-          )}
-          {actionError && <ActionBanner message={actionError} onDismiss={() => setActionError(null)} />}
-          {session.messages.length > 1 && !hideWelcomeBanner && (
-            <div className="mt-3 rounded-lg border border-accent/30 bg-accent-light/30 px-3 py-2 text-xs text-navy flex gap-3 items-start justify-between">
-              <p className="min-w-0 flex-1">{NOTICE_WELCOME_BACK.body}</p>
-              <button type="button" onClick={() => { if (sessionId) localStorage.setItem(welcomeBannerStorageKey(sessionId), "1"); setHideWelcomeBanner(true); }} className="shrink-0 rounded border border-accent/60 px-2 py-0.5 text-[11px]">
-                Hide
-              </button>
-            </div>
-          )}
-          {session.requiresAdditionalReview && !hideReviewBanner && (
-            <div className="mt-3 rounded-lg border border-warn/30 bg-warn-light px-3 py-2 text-sm text-warn flex gap-3 items-start justify-between" role="status">
-              <p className="min-w-0 flex-1">{renderChatEmphasis(NOTICE_ADDITIONAL_REVIEW.body)}</p>
-              <button type="button" onClick={() => { if (sessionId) localStorage.setItem(reviewBannerStorageKey(sessionId), "1"); setHideReviewBanner(true); }} className="shrink-0 rounded border border-warn/40 px-2 py-0.5 text-[11px]">
-                Hide
-              </button>
-            </div>
-          )}
-          {rulesFreshness?.isRulesOutdated && !hideRulesBanner && (
-            <div className="mt-3 rounded-lg border border-warn/30 bg-warn-light px-3 py-2 text-sm text-warn flex gap-3 items-start justify-between" role="alert">
-              <p className="min-w-0 flex-1">
-                {renderChatEmphasis(NOTICE_RULES_OUTDATED.body)}
-                {rulesFreshness.outdatedSources.length > 0 && (
-                  <span className="block mt-1 text-xs text-warn">
-                    Affected: {rulesFreshness.outdatedSources.join(", ")} · current rules: {rulesFreshness.currentRuleVersion}
-                  </span>
-                )}
-              </p>
               <button
                 type="button"
-                onClick={() => {
-                  if (sessionId) localStorage.setItem(rulesFreshnessBannerStorageKey(sessionId), "1");
-                  setHideRulesBanner(true);
-                }}
-                className="shrink-0 rounded border border-warn/40 px-2 py-0.5 text-[11px]"
+                disabled={sending}
+                onClick={() => send("generate the report")}
+                className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-dark disabled:opacity-50"
               >
-                Hide
+                Generate filing report
               </button>
             </div>
           )}
-          {showResultsSummary && fullReport && (
-            <div className="mt-3 rounded-lg border border-surface-border bg-surface-muted px-3 py-3 text-xs text-navy space-y-3">
-              <p className="text-sm font-medium text-navy">Results summary</p>
-              {fullReport.summaryJson.annualTaxEstimates?.map((est, i) => (
-                <p key={i}>
-                  <strong>{est.jurisdiction}</strong>: net due {formatMoney(est.netTaxDue, est.currency)} ({formatCalcStatus(est.calculationStatus)})
-                </p>
-              ))}
-              {latestReportMeta && reportActionButtons(latestReportMeta.id)}
+        </div>
+      )}
+    </>
+  );
+
+  const hasResultsBlock = Boolean(
+    (showResultsSummary && fullReport) ||
+      (session.state === "report" && !latestReportMeta) ||
+      (session.state === "complete" && !(fullReport && latestReportMeta))
+  );
+
+  const showWorkspace = hasChatWorkspaceContent({
+    sessionState: session.state,
+    hasResultsBlock
+  });
+
+  const workspaceEditors = (
+    <>
+      {["patrimony", "transfers", "trust_registry", "entity_simulation"].includes(session.state) && (
+        <DomainModuleEditor
+          state={session.state}
+          saving={domainSaving}
+          error={domainError}
+          onSaveAsset={(r) => void saveDomainAsset(r)}
+          onSaveTransfer={(r) => void saveDomainTransfer(r)}
+          onSaveTrust={(r) => void saveDomainTrust(r)}
+          onSaveEntitySim={(r) => void saveDomainEntitySim(r)}
+        />
+      )}
+      {session.state === "deductions" && (
+        <DeductionEditor
+          rows={deductionDraftRows}
+          loading={loadingDeductions}
+          savingId={savingDeductionId}
+          error={deductionError}
+          onAddRow={addDeductionDraftRow}
+          onUpdate={updateDeductionDraft}
+          onSave={(r) => void saveDeductionRow(r)}
+        />
+      )}
+      {session.state === "income_capture" && (
+        <IncomeEditor
+          rows={incomeDraftRows}
+          loading={loadingIncomes}
+          savingId={savingIncomeId}
+          error={incomeError}
+          sending={sending}
+          onAddRow={addIncomeDraftRow}
+          onUpdate={updateIncomeDraft}
+          onSave={(r) => void saveIncomeRow(r)}
+          onDelete={(r) => void deleteIncomeRow(r)}
+          onQuickAdd={setInput}
+        />
+      )}
+    </>
+  );
+
+  const workspaceButtonLabel = workspaceTitle;
+
+  return (
+    <div className="flex h-screen flex-col overflow-hidden bg-surface-muted">
+      <div className="mx-auto flex min-h-0 w-full max-w-[90rem] flex-1 flex-col bg-white 2xl:max-w-[96rem]">
+        <ChatSessionHeader
+          taxYear={session.taxYear}
+          stepLabel={stepLabelForState(session.state)}
+          currentState={session.state}
+          progressIndex={progress.index}
+          progressTotal={progress.total}
+          jumpDisabled={busy}
+          onJump={(s) => void jumpToStep(s)}
+          notices={sessionNotices}
+          noticeCenterOpen={noticeCenterOpen}
+          readNoticeIds={readNoticeIds}
+          noticeCenterRef={noticeCenterRef}
+          onToggleNotices={() => setNoticeCenterOpen((o) => !o)}
+          showMapCta={showMapCta}
+          syncingMap={syncingMap}
+          onOpenMap={() => void openTaxMap()}
+          resetting={resetting}
+          onStartOver={() => void startOver()}
+          onSignOut={handleSignOut}
+        />
+
+        <div className="relative flex min-h-0 flex-1">
+        <div
+          className={`flex min-h-0 min-w-0 flex-col bg-white ${
+            showWorkspace ? "w-full lg:w-[42%] xl:w-[40%]" : "w-full px-4 sm:px-8 lg:px-12"
+          }`}
+        >
+          <MessageList
+            messages={displayedMessages}
+            assistantTyping={assistantTyping}
+            typingDots={typingDots}
+            streamingText={streamingText}
+            chatError={chatError}
+            onRetry={lastFailedMessage ? () => void sendMessage(lastFailedMessage) : undefined}
+          />
+
+          {actionError && (
+            <div className="shrink-0 px-4 pb-2 sm:px-5 lg:px-6">
+              <ActionBanner message={actionError} onDismiss={() => setActionError(null)} />
             </div>
           )}
-          {session.state === "report" && !latestReportMeta && (
-            <div className="mt-3 rounded-lg border border-surface-border bg-surface-muted px-3 py-2 text-xs">
-              <button type="button" disabled={sending} onClick={() => send("generate the report")} className="rounded-full bg-accent hover:bg-accent-dark px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
-                Generate report
-              </button>
-            </div>
-          )}
-          {session.state === "complete" && !(fullReport && latestReportMeta) && (
-            <div className="mt-3 rounded-lg border border-accent/30 bg-accent-light px-3 py-2 text-xs text-navy space-y-2">
-              {latestReportMeta ? (
-                reportActionButtons(latestReportMeta.id)
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={syncingMap}
-                    onClick={() => void openTaxMap()}
-                    className={mapButtonClass}
-                  >
-                    {syncingMap ? "Building map…" : "View 360° tax map"}
-                  </button>
-                  <button type="button" disabled={sending} onClick={() => send("generate the report")} className="rounded-full bg-accent hover:bg-accent-dark px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
-                    Generate filing report
-                  </button>
-                </div>
+
+          {(showTriageChips || showWorkspace) && (
+            <div
+              className={`shrink-0 border-t border-surface-border px-4 py-2 sm:px-5 lg:px-6 ${
+                showTriageChips ? "" : "lg:hidden"
+              }`}
+            >
+              <TriageChips visible={showTriageChips} disabled={sending} onSelect={(id) => setInput(id)} />
+              {showWorkspace && (
+                <button
+                  type="button"
+                  onClick={() => setMobileWorkspaceOpen(true)}
+                  className="mb-1 w-full rounded-md border border-accent/40 bg-accent-light px-3 py-2 text-xs font-semibold text-accent-dark hover:bg-accent-light/80 lg:hidden"
+                >
+                  {workspaceButtonLabel}
+                </button>
               )}
             </div>
           )}
-        </header>
 
-        <MessageList
-          messages={displayedMessages}
-          assistantTyping={assistantTyping}
-          typingDots={typingDots}
-          streamingText={streamingText}
-          chatError={chatError}
-          onRetry={lastFailedMessage ? () => void sendMessage(lastFailedMessage) : undefined}
-        />
-
-        <div className="border-t border-surface-border px-3 sm:px-4 py-3">
-          <TriageChips visible={showTriageChips} disabled={sending} onSelect={(id) => setInput(id)} />
-          {["patrimony", "transfers", "trust_registry", "entity_simulation"].includes(session.state) && (
-            <DomainModuleEditor
-              state={session.state}
-              saving={domainSaving}
-              error={domainError}
-              onSaveAsset={(r) => void saveDomainAsset(r)}
-              onSaveTransfer={(r) => void saveDomainTransfer(r)}
-              onSaveTrust={(r) => void saveDomainTrust(r)}
-              onSaveEntitySim={(r) => void saveDomainEntitySim(r)}
-            />
-          )}
-          {session.state === "deductions" && (
-            <DeductionEditor
-              rows={deductionDraftRows}
-              loading={loadingDeductions}
-              savingId={savingDeductionId}
-              error={deductionError}
-              showEditor={showDeductionEditor}
-              onToggleEditor={() => setShowDeductionEditor((v) => !v)}
-              onAddRow={addDeductionDraftRow}
-              onUpdate={updateDeductionDraft}
-              onSave={(r) => void saveDeductionRow(r)}
-            />
-          )}
-          {session.state === "income_capture" && (
-            <IncomeEditor
-              rows={incomeDraftRows}
-              loading={loadingIncomes}
-              savingId={savingIncomeId}
-              error={incomeError}
-              showEditor={showIncomeEditor}
-              sending={sending}
-              onToggleEditor={() => {
-                setShowIncomeEditor((v) => {
-                  const next = !v;
-                  if (next) {
-                    void qc.invalidateQueries({ queryKey: ["incomes", sessionId, session.taxYear] });
-                  }
-                  return next;
-                });
-              }}
-              onAddRow={addIncomeDraftRow}
-              onUpdate={updateIncomeDraft}
-              onSave={(r) => void saveIncomeRow(r)}
-              onDelete={(r) => void deleteIncomeRow(r)}
-              onQuickAdd={setInput}
-            />
-          )}
+          <ChatInput
+            input={input}
+            sending={sending}
+            lastSavedAt={lastSavedAt}
+            hint={showWorkspace ? undefined : whyHint}
+            onInputChange={setInput}
+            onSend={() => send()}
+          />
         </div>
 
-        <ChatInput
-          input={input}
-          sending={sending}
-          lastSavedAt={lastSavedAt}
-          lastSavedSnippet={lastSavedSnippet}
-          onInputChange={setInput}
-          onSend={() => send()}
-        />
+        {showWorkspace && (
+          <>
+            {mobileWorkspaceOpen && (
+              <button
+                type="button"
+                className="fixed inset-0 z-40 bg-navy/40 lg:hidden"
+                aria-label="Dismiss details"
+                onClick={() => setMobileWorkspaceOpen(false)}
+              />
+            )}
+            <aside
+              className={
+                mobileWorkspaceOpen
+                  ? "fixed inset-x-0 bottom-0 z-50 flex max-h-[85vh] min-h-[50vh] flex-col overflow-hidden rounded-t-xl border-t border-surface-border bg-white shadow-card lg:static lg:z-auto lg:max-h-none lg:min-h-0 lg:w-[58%] lg:flex-1 lg:rounded-none lg:border-l lg:border-t-0 lg:shadow-none xl:w-[60%]"
+                  : "hidden min-h-0 border-l border-surface-border bg-white lg:flex lg:w-[58%] lg:flex-1 lg:flex-col xl:w-[60%]"
+              }
+              role={mobileWorkspaceOpen ? "dialog" : undefined}
+              aria-modal={mobileWorkspaceOpen ? true : undefined}
+              aria-label={mobileWorkspaceOpen ? workspaceTitle : undefined}
+            >
+              <ChatWorkspacePanel
+                title={workspaceTitle}
+                description={whyHint}
+                onClose={mobileWorkspaceOpen ? () => setMobileWorkspaceOpen(false) : undefined}
+                resultsBlock={resultsBlock}
+              >
+                {workspaceEditors}
+              </ChatWorkspacePanel>
+            </aside>
+          </>
+        )}
+      </div>
       </div>
     </div>
   );

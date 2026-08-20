@@ -65,7 +65,7 @@ export function collectBrazilStaysFromInterview(
 /** Write stays back to flat brazil_trip_N_* interview keys. */
 export function syncBrazilStaysToInterviewAnswers(
   stays: BrazilStay[],
-  currentlyInBrazil: boolean
+  _currentlyInBrazil: boolean
 ): InterviewAnswers {
   const answers: InterviewAnswers = {};
   const capped = stays.slice(0, MAX_BRAZIL_STAYS);
@@ -74,11 +74,8 @@ export function syncBrazilStaysToInterviewAnswers(
     const stay = capped[index]!;
     const n = index + 1;
     answers[`brazil_trip_${n}_entry`] = stay.entryDate;
-    if (stay.exitDate) {
-      answers[`brazil_trip_${n}_exit`] = stay.exitDate;
-    } else if (n === capped.length && currentlyInBrazil) {
-      answers[`brazil_trip_${n}_exit`] = undefined;
-    }
+    // Always write exit explicitly so clearing a previously set date is not lost on merge.
+    answers[`brazil_trip_${n}_exit`] = stay.exitDate || undefined;
   }
 
   for (let index = capped.length + 1; index <= MAX_BRAZIL_STAYS; index += 1) {
