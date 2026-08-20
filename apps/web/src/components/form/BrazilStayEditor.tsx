@@ -45,7 +45,7 @@ export function BrazilStayEditor({ answers, onBatchUpdate, invalid, twinId, taxY
 
   const applyStays = (next: BrazilStay[]) => {
     const filtered = next.filter((s) => s.entryDate.trim().length > 0);
-    const patch = syncBrazilStaysToInterviewAnswers(filtered, currentlyInBrazil);
+    const patch = syncBrazilStaysToInterviewAnswers(filtered);
     onBatchUpdate(patch);
   };
 

@@ -213,10 +213,7 @@ function mapFiscalToAnswers(fiscal: FiscalResidence): InterviewAnswers {
   if (fiscal.brazilStays && fiscal.brazilStays.length > 0) {
     Object.assign(
       answers,
-      syncBrazilStaysToInterviewAnswers(
-        fiscal.brazilStays,
-        fiscal.physicallyLivesInBrazil === true
-      )
+      syncBrazilStaysToInterviewAnswers(fiscal.brazilStays)
     );
   } else if (fiscal.firstEntryBrazilDate) {
     answers.brazil_trip_count = "1";

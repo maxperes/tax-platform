@@ -63,10 +63,7 @@ export function collectBrazilStaysFromInterview(
 }
 
 /** Write stays back to flat brazil_trip_N_* interview keys. */
-export function syncBrazilStaysToInterviewAnswers(
-  stays: BrazilStay[],
-  _currentlyInBrazil: boolean
-): InterviewAnswers {
+export function syncBrazilStaysToInterviewAnswers(stays: BrazilStay[]): InterviewAnswers {
   const answers: InterviewAnswers = {};
   const capped = stays.slice(0, MAX_BRAZIL_STAYS);
 

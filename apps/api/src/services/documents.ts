@@ -207,8 +207,7 @@ function mergeStaysIntoInterview(
     .map((r) => r.data);
   if (normalized.length === 0) return interview;
 
-  const currentlyInBrazil = interview.answers.currently_in_brazil === "yes";
-  const patch = syncBrazilStaysToInterviewAnswers(normalized, currentlyInBrazil);
+  const patch = syncBrazilStaysToInterviewAnswers(normalized);
   return {
     ...interview,
     answers: { ...interview.answers, ...patch }

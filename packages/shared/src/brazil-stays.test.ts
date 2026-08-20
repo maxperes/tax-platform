@@ -22,17 +22,16 @@ describe("brazil-stays helpers", () => {
   });
 
   it("syncs stays back to interview keys", () => {
-    const patch = syncBrazilStaysToInterviewAnswers(
-      [{ entryDate: "2024-01-01", exitDate: "2024-03-01" }],
-      false
-    );
+    const patch = syncBrazilStaysToInterviewAnswers([
+      { entryDate: "2024-01-01", exitDate: "2024-03-01" }
+    ]);
     expect(patch.brazil_trip_count).toBe("1");
     expect(patch.brazil_trip_1_entry).toBe("2024-01-01");
     expect(patch.brazil_trip_1_exit).toBe("2024-03-01");
   });
 
   it("clears a previously set exit date when omitted", () => {
-    const patch = syncBrazilStaysToInterviewAnswers([{ entryDate: "2024-01-01" }], true);
+    const patch = syncBrazilStaysToInterviewAnswers([{ entryDate: "2024-01-01" }]);
     expect(patch.brazil_trip_1_entry).toBe("2024-01-01");
     expect(patch.brazil_trip_1_exit).toBeUndefined();
     expect(Object.prototype.hasOwnProperty.call(patch, "brazil_trip_1_exit")).toBe(true);
