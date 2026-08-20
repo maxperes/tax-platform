@@ -1,5 +1,9 @@
 import type { TwinInventory, TwinPersonInput } from "./twin.js";
 import { NOT_SURE, type InterviewRecord } from "./interview-record.js";
+import {
+  collectBrazilStaysFromInterview,
+  countPresenceDaysFromStays
+} from "./brazil-stays.js";
 
 const ASSET_LABELS: Record<string, string> = {
   bank_accounts: "Bank accounts",
@@ -20,6 +24,10 @@ const DAYS_BAND: Record<string, number> = {
   "91_182": 136,
   "183_plus": 200
 };
+
+function derivedDaysFromStays(stays: NonNullable<TwinInventory["residency"]["brazilStays"]>): number {
+  return countPresenceDaysFromStays(stays);
+}
 
 const PATHWAY: Record<string, TwinInventory["residency"]["entryPathway"]> = {
   tourist: "other",
@@ -91,33 +99,7 @@ function followAssetCountry(record: InterviewRecord, assetType: string, fallback
 }
 
 function collectBrazilStays(record: InterviewRecord): TwinInventory["residency"]["brazilStays"] {
-  const currentlyInBrazil = asString(record, "currently_in_brazil") === "yes";
-  const count = Number(asString(record, "brazil_trip_count"));
-  const stays: NonNullable<TwinInventory["residency"]["brazilStays"]> = [];
-
-  if (Number.isInteger(count) && count >= 1 && count <= 5) {
-    for (let index = 1; index <= count; index += 1) {
-      const entry = isoDate(asString(record, `brazil_trip_${index}_entry`));
-      if (!entry) continue;
-      const exit = isoDate(asString(record, `brazil_trip_${index}_exit`));
-      const isLast = index === count;
-      if (exit) {
-        stays.push({ entryDate: entry, exitDate: exit });
-      } else if (isLast && currentlyInBrazil) {
-        stays.push({ entryDate: entry });
-      }
-    }
-  }
-
-  if (stays.length === 0) {
-    const entry = isoDate(asString(record, "first_entry_date"));
-    if (entry && currentlyInBrazil) {
-      stays.push({ entryDate: entry });
-    }
-  }
-
-  stays.sort((a, b) => a.entryDate.localeCompare(b.entryDate));
-  return stays.length > 0 ? stays : undefined;
+  return collectBrazilStaysFromInterview(record);
 }
 
 function followWithholding(record: InterviewRecord, category: string): number | undefined {
@@ -154,7 +136,6 @@ export function interviewToTwin(record: InterviewRecord): {
   const originFallback = countryCodeToIso(residence ?? citizenship ?? "us");
   const days = asString(record, "days_in_brazil");
   const immigration = asString(record, "immigration_status");
-  const entry = asString(record, "first_entry_date");
   const currentlyInBrazil = asString(record, "currently_in_brazil");
   const selfResidentElsewhere = asString(record, "self_assessed_residency");
   const incomeTypes = asList(record, "income_types");
@@ -260,31 +241,26 @@ export function interviewToTwin(record: InterviewRecord): {
       : [];
 
   const brazilStays = collectBrazilStays(record);
-  const firstEntryCandidates = [isoDate(entry), brazilStays?.[0]?.entryDate]
-    .filter((value): value is string => Boolean(value))
-    .sort();
-  const firstEntry = firstEntryCandidates[0];
+  const firstEntry = brazilStays?.[0]?.entryDate ?? isoDate(asString(record, "first_entry_date"));
+  const derivedDays = brazilStays ? derivedDaysFromStays(brazilStays) : undefined;
+  const legacyDays = days && days !== NOT_SURE ? DAYS_BAND[days] : undefined;
 
   const inventory: TwinInventory = {
     residency: {
       firstEntryBrazilDate: firstEntry,
       entryPathway:
         immigration && immigration !== NOT_SURE ? PATHWAY[immigration] ?? "unknown" : "unknown",
-      daysInBrazilCalendarYear: days && days !== NOT_SURE ? DAYS_BAND[days] : undefined,
+      daysInBrazilCalendarYear: derivedDays ?? legacyDays,
       brazilStays,
+      physicallyLivesInBrazil:
+        currentlyInBrazil === "yes" ? true : currentlyInBrazil === "no" ? false : undefined,
       currentlyFiscalResidentBrazil: undefined,
       currentlyFiscalResidentUSA: residence === "us" || citizenship === "us",
       otherFiscalResidencies:
         selfResidentElsewhere === "yes" && residence && residence !== "us" && residence !== "br"
           ? [countryCodeToIso(residence)]
           : undefined,
-      priorPermanentExitBrazil: asString(record, "filed_departure_declaration") === "yes",
-      intendsToRemain:
-        asString(record, "intends_to_remain") === "yes" ||
-        asString(record, "intends_to_remain") === "temporarily" ||
-        asString(record, "intends_to_remain") === "no"
-          ? (asString(record, "intends_to_remain") as "yes" | "temporarily" | "no")
-          : undefined
+      priorPermanentExitBrazil: asString(record, "filed_departure_declaration") === "yes"
     },
     countryFootprint,
     incomes,

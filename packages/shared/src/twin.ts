@@ -71,6 +71,8 @@ export const twinResidencyFactsSchema = z.object({
   daysInBrazilCalendarYear: z.number().int().min(0).max(366).optional(),
   /** Day-level entry/exit history for BR-RESID-001 rolling 183-day test. */
   brazilStays: z.array(brazilStaySchema).optional(),
+  /** Whether the person is physically in Brazil today (from interview or copilot). */
+  physicallyLivesInBrazil: z.boolean().optional(),
   priorPermanentExitBrazil: z.boolean().optional(),
   priorPermanentExitDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   currentlyFiscalResidentBrazil: z.boolean().optional(),
@@ -82,7 +84,7 @@ export const twinResidencyFactsSchema = z.object({
   filesDirpfWithBrazilAddress: z.boolean().optional(),
   maintainsBrazilBankAccounts: z.boolean().optional(),
   acquiredBrazilRealEstateAfterClaimedExit: z.boolean().optional(),
-  /** Interview: yes / temporarily / no — used for exit-declaration obligation. */
+  /** Legacy interview field; no longer collected. Kept for older Twin records. */
   intendsToRemain: z.enum(["yes", "temporarily", "no"]).optional()
 });
 

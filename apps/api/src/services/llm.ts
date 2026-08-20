@@ -104,7 +104,17 @@ const fiscalResidenceDataProperties = {
   isFiscalResidentUSA: { type: "boolean" },
   fiscalResidenceOtherCountry: { type: "boolean" },
   physicallyLivesInBrazil: { type: "boolean" },
-  daysInBrazilCalendarYear: { type: "integer", minimum: 0, maximum: 366 },
+  brazilStays: {
+    type: "array",
+    items: {
+      type: "object",
+      properties: {
+        entryDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        exitDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }
+      },
+      required: ["entryDate"]
+    }
+  },
   daysInUSACalendarYear: { type: "integer", minimum: 0, maximum: 366 },
   firstEntryBrazilDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
   immigrationStatus: {
@@ -123,7 +133,6 @@ const fiscalResidenceDataProperties = {
   },
   hasCpf: { type: "boolean" },
   hasResidencePermit: { type: "boolean" },
-  intendsToRemain: { type: "string", enum: ["yes", "temporarily", "no"] },
   lastFilingCountry: { type: "string", minLength: 2 },
   filedBrazilianReturn: { type: "boolean" },
   maritalStatus: {

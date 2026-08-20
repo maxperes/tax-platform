@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { brazilStaySchema } from "./twin.js";
 
 export const fiscalResidenceSchema = z.object({
   fullName: z.string().min(1),
@@ -17,7 +18,8 @@ export const fiscalResidenceSchema = z.object({
   fiscalResidenceBrazilEndDate: z.string().optional(),
   declaredPermanentExitBrazil: z.boolean().optional(),
   physicallyLivesInBrazil: z.boolean().optional(),
-  daysInBrazilCalendarYear: z.number().int().min(0).max(366).optional(),
+  /** Day-level Brazil entry/exit stays for the 183-day test. */
+  brazilStays: z.array(brazilStaySchema).optional(),
   daysInUSACalendarYear: z.number().int().min(0).max(366).optional(),
   hasGreenCard: z.boolean().optional(),
   hasUSCitizenship: z.boolean().optional(),
@@ -43,7 +45,6 @@ export const fiscalResidenceSchema = z.object({
     .optional(),
   hasCpf: z.boolean().optional(),
   hasResidencePermit: z.boolean().optional(),
-  intendsToRemain: z.enum(["yes", "temporarily", "no"]).optional(),
   lastFilingCountry: z.string().min(2).optional(),
   filedBrazilianReturn: z.boolean().optional(),
   maritalStatus: z.enum(["single", "married", "stable_union", "divorced", "widowed"]).optional(),

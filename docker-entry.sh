@@ -1,21 +1,23 @@
 #!/bin/sh
 set -eu
 cd /app/apps/api
-# Default: do NOT migrate on every replica boot (horizontal-safe).
-# Set MIGRATE_ON_START=true for legacy single-instance deploys, or run migrate in CI/CD.
+
+ROLE="${PROCESS_ROLE:-api}"
 MIGRATE="${MIGRATE_ON_START:-}"
 SKIP="${SKIP_MIGRATE_ON_START:-}"
-if [ "$MIGRATE" = "true" ] || [ "$MIGRATE" = "1" ] || [ "$MIGRATE" = "yes" ]; then
+
+# Default: API applies pending migrations on boot (Railway / single instance).
+# Workers skip so they do not race the API. Multi-replica API fleets that migrate
+# in CI/CD can set SKIP_MIGRATE_ON_START=true.
+if [ "$SKIP" = "true" ] || [ "$SKIP" = "1" ] || [ "$SKIP" = "yes" ] \
+  || [ "$MIGRATE" = "false" ] || [ "$MIGRATE" = "0" ] || [ "$MIGRATE" = "no" ]; then
+  SHOULD_MIGRATE=0
+elif [ "$MIGRATE" = "true" ] || [ "$MIGRATE" = "1" ] || [ "$MIGRATE" = "yes" ]; then
   SHOULD_MIGRATE=1
-elif [ "$SKIP" = "true" ] || [ "$SKIP" = "1" ] || [ "$SKIP" = "yes" ]; then
+elif [ "$ROLE" = "worker" ]; then
   SHOULD_MIGRATE=0
 else
-  # Production default: skip migrate on start
-  if [ "${NODE_ENV:-}" = "production" ]; then
-    SHOULD_MIGRATE=0
-  else
-    SHOULD_MIGRATE=1
-  fi
+  SHOULD_MIGRATE=1
 fi
 
 if [ "$SHOULD_MIGRATE" = "1" ]; then
@@ -33,10 +35,9 @@ if [ "$SHOULD_MIGRATE" = "1" ]; then
     exit 1
   fi
 else
-  echo "[docker-entry] Skipping migrate on start (set MIGRATE_ON_START=true to enable). Run migrations from CI/CD."
+  echo "[docker-entry] Skipping migrate on start (set MIGRATE_ON_START=true to enable, or unset SKIP_MIGRATE_ON_START)."
 fi
 
-ROLE="${PROCESS_ROLE:-api}"
 if [ "$ROLE" = "worker" ]; then
   exec node dist/worker.js
 fi

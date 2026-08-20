@@ -51,10 +51,21 @@ export function residencyLifecycle(
     return { lifecycleState: "exit", exitDate, returnDate: null };
   }
 
-  if (facts.intendsToRemain === "no" && !becameResident && facts.firstEntryBrazilDate) {
+  const stays = facts.brazilStays ?? [];
+  const lastStay = stays.length > 0 ? stays[stays.length - 1] : undefined;
+  const closedLastStay = Boolean(lastStay?.exitDate);
+  const notCurrentlyInBrazil = facts.physicallyLivesInBrazil === false;
+
+  if (
+    !becameResident &&
+    notCurrentlyInBrazil &&
+    closedLastStay &&
+    lastStay?.exitDate &&
+    facts.firstEntryBrazilDate
+  ) {
     return {
       lifecycleState: "exit",
-      exitDate: exitDate ?? facts.firstEntryBrazilDate,
+      exitDate: exitDate ?? lastStay.exitDate,
       returnDate: null
     };
   }

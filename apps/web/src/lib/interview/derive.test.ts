@@ -77,16 +77,16 @@ describe("interview derivation", () => {
     expect(interviewSteps(emptyInterviewRecord())).toEqual(STEPS);
   });
 
-  it("inserts presence and asset-location steps from follow-up answers", () => {
+  it("inserts asset-location steps from follow-up answers", () => {
     const filled = record({
       currently_in_brazil: "yes",
-      brazil_trip_count: "2",
+      brazil_trip_count: "1",
+      brazil_trip_1_entry: "2026-01-01",
       asset_types: ["brokerage", "real_estate"]
     });
     const ids = interviewSteps(filled).map((step) => step.id);
-    expect(ids).toContain("brazil_presence");
+    expect(ids).not.toContain("brazil_presence");
     expect(ids).toContain("asset_details");
-    expect(ids.indexOf("brazil_presence")).toBeLessThan(ids.indexOf("tax_residency"));
     expect(ids.indexOf("asset_details")).toBeGreaterThan(ids.indexOf("assets"));
   });
 
@@ -145,29 +145,26 @@ describe("interview derivation", () => {
 
   it("builds residency signals and a timeline from presence answers", () => {
     const filled = record({
-      days_in_brazil: "183_plus",
       has_residence_permit: "yes",
-      intends_to_remain: "yes",
       dual_residency_risk: "yes",
-      first_entry_date: "2026-03-01",
+      brazil_trip_count: "1",
+      brazil_trip_1_entry: "2026-03-01",
+      brazil_trip_1_exit: "2026-08-01",
       last_filing_country: "us",
-      currently_in_brazil: "yes"
+      currently_in_brazil: "no"
     });
     const signals = residencySignals(filled);
-    expect(signals[0]).toMatchObject({
-      label: "Days of presence",
-      value: "183 days or more"
-    });
+    expect(signals[0]?.label).toBe("Days of presence");
+    expect(signals[0]?.value).toMatch(/days recorded/);
     expect(signals[1]?.value).toBe("Held");
-    expect(signals[2]?.value).toBe("Indefinite");
-    expect(signals[3]?.value).toBe("Flagged");
+    expect(signals[2]?.value).toBe("Flagged");
 
     const timeline = residencyTimeline(filled);
     expect(timeline.map((event) => event.title)).toEqual([
       "Tax return filed in United States",
-      "First entry into Brazil in the relevant year",
+      "Entry into Brazil (stay 1)",
+      "Exit from Brazil (stay 1)",
       "Presence in Brazil recorded",
-      "Currently present in Brazil",
       "Residency position reviewed by a professional"
     ]);
   });
@@ -184,6 +181,7 @@ describe("interview derivation", () => {
       "Entry into Brazil (stay 1)",
       "Exit from Brazil (stay 1)",
       "Entry into Brazil (stay 2)",
+      "Presence in Brazil recorded",
       "Currently present in Brazil",
       "Residency position reviewed by a professional"
     ]);

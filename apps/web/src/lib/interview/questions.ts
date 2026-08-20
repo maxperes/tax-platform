@@ -59,7 +59,8 @@ export const STEPS: StepDef[] = [
   {
     id: "brazil_immigration",
     title: "Brazil immigration",
-    intro: "How and when you have been present in Brazil. Days of presence and immigration status both matter.",
+    intro:
+      "Record when you entered and left Brazil. The system counts days of presence — you do not need to estimate totals yourself.",
     questions: [
       {
         id: "currently_in_brazil",
@@ -69,25 +70,12 @@ export const STEPS: StepDef[] = [
         required: true
       },
       {
-        id: "first_entry_date",
-        label: "Date of first entry into Brazil",
-        help: "The earliest arrival you want this file to consider. Leave blank if you have not entered Brazil.",
-        type: "date",
-        allowNotSure: true
-      },
-      {
-        id: "brazil_trip_count",
-        label: "How many separate stays in Brazil should we record?",
-        help: "Each stay is one entry and one exit. Record every period in Brazil that might fall in a rolling twelve-month window. If you are still in Brazil, leave the last exit blank.",
-        type: "select",
-        options: [
-          { value: "1", label: "One stay" },
-          { value: "2", label: "Two stays" },
-          { value: "3", label: "Three stays" },
-          { value: "4", label: "Four stays" },
-          { value: "5", label: "Five stays" }
-        ],
-        allowNotSure: true
+        id: "brazil_stays",
+        label: "Brazil entry and exit dates",
+        help:
+          "Each row is one stay. Record every period in Brazil that might fall in a rolling twelve-month window. If you are still in Brazil, leave the last exit blank.",
+        type: "stays",
+        required: true
       },
       {
         id: "immigration_status",
@@ -119,30 +107,6 @@ export const STEPS: StepDef[] = [
         label: "Do you have a Brazilian residence permit?",
         type: "radio",
         options: YES_NO_UNSURE,
-        allowNotSure: true
-      },
-      {
-        id: "intends_to_remain",
-        label: "Do you intend to remain in Brazil?",
-        type: "radio",
-        options: [
-          { value: "yes", label: "Yes, indefinitely" },
-          { value: "temporarily", label: "Yes, for a defined period" },
-          { value: "no", label: "No" }
-        ],
-        allowNotSure: true
-      },
-      {
-        id: "days_in_brazil",
-        label: "Approximately how many days did you spend in Brazil?",
-        help: "A twelve-month estimate. When you record stay dates, those dates drive the 183-day test; this band is a fallback.",
-        type: "select",
-        options: [
-          { value: "0_30", label: "Fewer than 30 days" },
-          { value: "31_90", label: "31 to 90 days" },
-          { value: "91_182", label: "91 to 182 days" },
-          { value: "183_plus", label: "183 days or more" }
-        ],
         allowNotSure: true
       }
     ]
@@ -297,43 +261,6 @@ export function questionById(id: string) {
   return ALL_QUESTIONS.find((question) => question.id === id);
 }
 
-export function brazilPresenceStep(
-  tripCount?: string,
-  currentlyInBrazil?: string
-): StepDef | null {
-  const count = Number(tripCount);
-  if (!Number.isInteger(count) || count < 1 || count > 5) return null;
-  const lastExitOptional = currentlyInBrazil === "yes";
-  const questions: StepDef["questions"] = [];
-  for (let index = 1; index <= count; index += 1) {
-    const isLast = index === count;
-    questions.push({
-      id: `brazil_trip_${index}_entry`,
-      label: `Stay ${index}: date you entered Brazil`,
-      type: "date",
-      required: true
-    });
-    questions.push({
-      id: `brazil_trip_${index}_exit`,
-      label: `Stay ${index}: date you left Brazil`,
-      help:
-        isLast && lastExitOptional
-          ? "Leave blank if this stay is still ongoing."
-          : "Last day you were in Brazil on this stay.",
-      type: "date",
-      required: !(isLast && lastExitOptional),
-      allowNotSure: true
-    });
-  }
-  return {
-    id: "brazil_presence",
-    title: "Brazil presence",
-    intro:
-      "Entry and exit dates for each stay. The 183-day residency test uses a rolling twelve-month window, not a calendar year.",
-    questions
-  };
-}
-
 export function incomeDetailStep(selected: string[]): StepDef | null {
   const chosen = INCOME_OPTIONS.filter((option) => selected.includes(option.value));
   if (chosen.length === 0) return null;
@@ -414,17 +341,10 @@ export function assetDetailStep(selected: string[]): StepDef | null {
 export function stepsForInterview(
   selectedIncome: string[],
   extras: {
-    tripCount?: string;
-    currentlyInBrazil?: string;
     assetTypes?: string[];
   } = {}
 ): StepDef[] {
   const steps = [...STEPS];
-  const presence = brazilPresenceStep(extras.tripCount, extras.currentlyInBrazil);
-  if (presence) {
-    const idx = steps.findIndex((step) => step.id === "tax_residency");
-    if (idx >= 0) steps.splice(idx, 0, presence);
-  }
   const income = incomeDetailStep(selectedIncome);
   if (income) {
     const idx = steps.findIndex((step) => step.id === "assets");

@@ -6,26 +6,35 @@ import {
 } from "./fiscal-intake.js";
 
 describe("map-aligned fiscal fields", () => {
-  it("always asks days in Brazil and immigration facts", () => {
+  it("asks Brazil stays and immigration facts", () => {
     const keys = getActiveFiscalFieldOrder({
       currentResidenceCountry: "US",
       nationalityCountry: "US",
+      physicallyLivesInBrazil: true,
+      brazilStaysText: [{ entryDate: "2024-01-01", exitDate: "2024-06-01" }],
       isFiscalResidentBrazil: false,
       isFiscalResidentUSA: true,
       fiscalResidenceOtherCountry: false
     }).map((f) => f.key);
-    expect(keys).toContain("daysInBrazilCalendarYear");
+    expect(keys).toContain("brazilStaysText");
     expect(keys).toContain("immigrationStatus");
-    expect(keys).toContain("firstEntryBrazilDate");
-    expect(keys).toContain("hasCpf");
+    expect(keys).not.toContain("daysInBrazilCalendarYear");
+    expect(keys).not.toContain("firstEntryBrazilDate");
     expect(keys).not.toContain("email");
     expect(keys).not.toContain("cpf");
   });
 
-  it("accepts day bands and not sure", () => {
-    expect(coerceFiscalFieldValue("daysInBrazilCalendarYear", "183+")).toBe(200);
-    expect(coerceFiscalFieldValue("daysInBrazilCalendarYear", "not sure")).toBe("not_sure");
-    expect(isValidFiscalFieldValue("daysInBrazilCalendarYear", "not_sure")).toBe(true);
+  it("parses Brazil stay text and not sure", () => {
+    const stays = coerceFiscalFieldValue(
+      "brazilStaysText",
+      "2024-03-01, 2024-06-15\n2024-09-01, ongoing"
+    );
+    expect(stays).toEqual([
+      { entryDate: "2024-03-01", exitDate: "2024-06-15" },
+      { entryDate: "2024-09-01" }
+    ]);
+    expect(coerceFiscalFieldValue("brazilStaysText", "not sure")).toBe("not_sure");
+    expect(isValidFiscalFieldValue("brazilStaysText", "not_sure")).toBe(true);
   });
 
   it("accepts slash birth dates", () => {
@@ -52,9 +61,8 @@ describe("map-aligned fiscal fields", () => {
     expect(isValidFiscalFieldValue("immigrationStatus", "digital_nomad")).toBe(true);
   });
 
-  it("accepts immigration and intent tokens", () => {
+  it("accepts immigration tokens", () => {
     expect(coerceFiscalFieldValue("immigrationStatus", "digital nomad")).toBe("digital_nomad");
-    expect(coerceFiscalFieldValue("intendsToRemain", "temporarily")).toBe("temporarily");
     expect(isValidFiscalFieldValue("hasCpf", true)).toBe(true);
   });
 });

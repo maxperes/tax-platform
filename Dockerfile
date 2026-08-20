@@ -38,5 +38,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-# PROCESS_ROLE=api|worker. Migrations: off by default in production; use CI or MIGRATE_ON_START=true.
+# PROCESS_ROLE=api|worker. API runs prisma migrate deploy on start unless SKIP_MIGRATE_ON_START=true.
 CMD ["/app/docker-entry.sh"]

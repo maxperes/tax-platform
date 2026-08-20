@@ -14,24 +14,20 @@ const FIELD_FAQ: Record<string, string> = {
   nationalityCountry:
     "Nationality helps determine filing obligations (e.g. US citizens). Reply with a country name or code like **BR** or **US**.",
   physicallyLivesInBrazil: "Whether you are in Brazil now is a presence fact for residency. Reply **yes** or **no**.",
-  daysInBrazilCalendarYear:
-    "Days in Brazil in the last twelve months feed the 183-day residency test. Reply with **0–366**, a band (**under 30**, **31–90**, **91–182**, **183+**), or **not sure**.",
+  brazilStaysText:
+    "Record Brazil entry and exit dates — the system counts days for the 183-day test. One stay per line: **ENTRY YYYY-MM-DD, EXIT YYYY-MM-DD** (use **ongoing** if still in Brazil).",
   isFiscalResidentBrazil:
     "A **fiscal resident** of Brazil generally files IRPF and may owe Carnê-Leão on foreign income. Reply **yes** or **no**.",
   isFiscalResidentUSA:
     "US fiscal residence usually means you file a US return. Reply **yes** or **no**.",
   fiscalResidenceOtherCountry:
     "If you are also resident elsewhere, we flag the case for review. Reply **yes** or **no**.",
-  firstEntryBrazilDate:
-    "First entry in the tax year helps date when Brazilian tax residency may start. Reply **YYYY-MM-DD**, **none** if you did not enter, or **not sure**.",
   immigrationStatus:
     "This is your **Brazilian immigration category**, not a yes/no. Reply **1–9** (tourist, temporary visa, digital nomad, work visa, retirement visa, family reunion, permanent, citizen, or none), or **not sure**.",
   hasCpf:
     "We only need to know whether you have a CPF — never send the number. Reply **yes** or **no**.",
   hasResidencePermit:
     "A residence permit is a signal for Brazilian tax residency. Reply **yes**, **no**, or **not sure**.",
-  intendsToRemain:
-    "Intent to stay can affect how residency is modeled. Reply **yes** (indefinitely), **temporarily**, **no**, or **not sure**.",
   lastFilingCountry:
     "Last year's filing country is a clue for which rules apply. Reply with a country, **none**, or **not sure**.",
   filedBrazilianReturn:

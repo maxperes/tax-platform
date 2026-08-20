@@ -59,10 +59,9 @@ describe("resolveFiscalFieldForUserAnswer", () => {
     const ctx = {
       ...partialProfile,
       physicallyLivesInBrazil: true,
-      daysInBrazilCalendarYear: 100,
+      brazilStaysText: [{ entryDate: "2024-01-01", exitDate: "2024-04-01" }],
       isFiscalResidentUSA: false,
       fiscalResidenceOtherCountry: false,
-      firstEntryBrazilDate: "not_sure",
       immigrationStatus: "none",
       hasCpf: true,
       birthDate: "1988-01-01",
@@ -114,7 +113,7 @@ describe("isLikelyOffTopicUserMessage fiscal_residence", () => {
       {
         ...partialProfile,
         physicallyLivesInBrazil: true,
-        daysInBrazilCalendarYear: 100,
+        brazilStaysText: [{ entryDate: "2024-01-01", exitDate: "2024-04-01" }],
         isFiscalResidentUSA: false,
         fiscalResidenceOtherCountry: false,
         hasCpf: true,
@@ -142,13 +141,13 @@ describe("isLikelyOffTopicUserMessage fiscal_residence", () => {
 const coreAnswered = {
   ...partialProfile,
   physicallyLivesInBrazil: false,
-  daysInBrazilCalendarYear: 20,
+  brazilStaysText: [{ entryDate: "2024-01-01", exitDate: "2024-01-20" }],
   isFiscalResidentUSA: false,
   fiscalResidenceOtherCountry: false
 };
 
 describe("resolveFiscalFieldBeingAsked", () => {
-  it("prefers last asked immigration over first pending first-entry date", () => {
+  it("prefers last asked immigration over first pending map field", () => {
     const key = resolveFiscalFieldBeingAsked(
       { ...coreAnswered, _lastAskedKey: "immigrationStatus" },
       "Now, do you have any immigration status in Brazil? (yes/no)"

@@ -22,7 +22,10 @@ const baseFiscal: FiscalResidence = {
   isFiscalResidentUSA: true,
   fiscalResidenceOtherCountry: false,
   physicallyLivesInBrazil: true,
-  daysInBrazilCalendarYear: 200,
+  brazilStays: [
+    { entryDate: "2024-02-19" },
+    { entryDate: "2025-01-01", exitDate: "2025-06-30" }
+  ],
   declaredPermanentExitBrazil: false,
   cpf: "123",
   hasDependentsBrazilOrAbroad: false
@@ -35,7 +38,8 @@ describe("sessionFactsToInterviewRecord", () => {
     expect(record.answers.citizenship).toBe("us");
     expect(record.answers.residence_country).toBe("br");
     expect(record.answers.currently_in_brazil).toBe("yes");
-    expect(record.answers.days_in_brazil).toBe("183_plus");
+    expect(record.answers.brazil_trip_1_entry).toBe("2024-02-19");
+    expect(record.answers.brazil_trip_count).toBe("2");
     expect(record.answers.dual_residency_risk).toBe("yes");
     expect(record.answers.has_cpf).toBe("yes");
     expect(record.meta?.source).toBe("copilot");
@@ -46,21 +50,20 @@ describe("sessionFactsToInterviewRecord", () => {
     const record = sessionFactsToInterviewRecord({
       fiscal: {
         ...baseFiscal,
-        firstEntryBrazilDate: "2026-03-15",
+        brazilStays: [{ entryDate: "2026-03-15", exitDate: "2026-06-01" }],
         immigrationStatus: "digital_nomad",
         hasCpf: true,
         hasResidencePermit: false,
-        intendsToRemain: "temporarily",
         lastFilingCountry: "US",
         filedBrazilianReturn: false,
         maritalStatus: "married",
         dependentsCount: 2
       }
     });
-    expect(record.answers.first_entry_date).toBe("2026-03-15");
+    expect(record.answers.brazil_trip_1_entry).toBe("2026-03-15");
+    expect(record.answers.brazil_trip_1_exit).toBe("2026-06-01");
     expect(record.answers.immigration_status).toBe("digital_nomad");
     expect(record.answers.has_residence_permit).toBe("no");
-    expect(record.answers.intends_to_remain).toBe("temporarily");
     expect(record.answers.last_filing_country).toBe("us");
     expect(record.answers.filed_brazilian_return).toBe("no");
     expect(record.answers.marital_status).toBe("married");
@@ -186,22 +189,29 @@ describe("interviewToTwin", () => {
     expect(inventory.incomes[0]?.category).toBe("salary");
     expect(inventory.incomes[0]?.annualAmount).toBe(60000);
     expect(inventory.incomes[0]?.brazilianTaxTreatment).toBe("salary_progressive");
-    expect(inventory.residency.daysInBrazilCalendarYear).toBe(200);
+    expect(inventory.residency.daysInBrazilCalendarYear).toBeGreaterThan(0);
+    expect(inventory.residency.physicallyLivesInBrazil).toBe(true);
   });
 
-  it("drops first-entry dates that are not ISO calendar days", () => {
-    const record = sessionFactsToInterviewRecord({ fiscal: baseFiscal });
-    record.answers.first_entry_date = "not sure";
+  it("drops invalid stay entry dates", () => {
+    const record = sessionFactsToInterviewRecord({
+      fiscal: { ...baseFiscal, brazilStays: undefined }
+    });
+    record.answers.brazil_trip_count = "1";
+    record.answers.brazil_trip_1_entry = "not sure";
     const { inventory } = interviewToTwin(record);
     expect(inventory.residency.firstEntryBrazilDate).toBeUndefined();
   });
 
   it("maps stay dates and asset countries into twin inventory", () => {
-    const record = sessionFactsToInterviewRecord({ fiscal: baseFiscal });
+    const record = sessionFactsToInterviewRecord({
+      fiscal: { ...baseFiscal, brazilStays: undefined }
+    });
     record.answers.brazil_trip_count = "2";
     record.answers.brazil_trip_1_entry = "2025-09-01";
     record.answers.brazil_trip_1_exit = "2025-12-09";
     record.answers.brazil_trip_2_entry = "2026-01-01";
+    record.answers.brazil_trip_2_exit = undefined;
     record.answers.currently_in_brazil = "yes";
     record.answers.asset_types = ["brokerage", "brazilian_companies"];
     record.answers.asset_brokerage_country = "pt";

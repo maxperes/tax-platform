@@ -47,7 +47,8 @@ export type QuestionType =
   | "number"
   | "select"
   | "radio"
-  | "multiselect";
+  | "multiselect"
+  | "stays";
 
 export interface QuestionDef {
   id: string;

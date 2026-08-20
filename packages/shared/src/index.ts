@@ -21,3 +21,4 @@ export * from "./regra-matriz.js";
 export * from "./interview-record.js";
 export * from "./interview-to-twin.js";
 export * from "./session-to-interview.js";
+export * from "./brazil-stays.js";

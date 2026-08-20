@@ -59,7 +59,7 @@ export const STEPS: StepDef[] = [
     id: "brazil_immigration",
     title: "Brazil immigration",
     intro:
-      "How and when you have been present in Brazil. Days of presence and immigration status both matter.",
+      "Record when you entered and left Brazil. The system counts days of presence — you do not need to estimate totals yourself.",
     questions: [
       {
         id: "currently_in_brazil",
@@ -69,11 +69,12 @@ export const STEPS: StepDef[] = [
         required: true,
       },
       {
-        id: "first_entry_date",
-        label: "Date of first entry during the relevant year",
-        help: "Leave blank if you did not enter Brazil that year.",
-        type: "date",
-        allowNotSure: true,
+        id: "brazil_stays",
+        label: "Brazil entry and exit dates",
+        help:
+          "Each row is one stay. Record every period in Brazil that might fall in a rolling twelve-month window.",
+        type: "stays",
+        required: true,
       },
       {
         id: "immigration_status",
@@ -105,30 +106,6 @@ export const STEPS: StepDef[] = [
         label: "Do you have a Brazilian residence permit?",
         type: "radio",
         options: YES_NO_UNSURE,
-        allowNotSure: true,
-      },
-      {
-        id: "intends_to_remain",
-        label: "Do you intend to remain in Brazil?",
-        type: "radio",
-        options: [
-          { value: "yes", label: "Yes, indefinitely" },
-          { value: "temporarily", label: "Yes, for a defined period" },
-          { value: "no", label: "No" },
-        ],
-        allowNotSure: true,
-      },
-      {
-        id: "days_in_brazil",
-        label: "Approximately how many days did you spend in Brazil?",
-        help: "An estimate over the last twelve months is enough.",
-        type: "select",
-        options: [
-          { value: "0_30", label: "Fewer than 30 days" },
-          { value: "31_90", label: "31 to 90 days" },
-          { value: "91_182", label: "91 to 182 days" },
-          { value: "183_plus", label: "183 days or more" },
-        ],
         allowNotSure: true,
       },
     ],

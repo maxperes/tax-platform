@@ -110,43 +110,22 @@ export interface ResidencySignal {
 }
 
 export function residencySignals(record: DemoRecord): ResidencySignal[] {
-  const days = asString(record, "days_in_brazil");
-  const daysLabel: Record<string, string> = {
-    "0_30": "Fewer than 30 days",
-    "31_90": "31 to 90 days",
-    "91_182": "91 to 182 days",
-    "183_plus": "183 days or more",
-  };
+  const tripCount = Number(asString(record, "brazil_trip_count"));
   const permit = asString(record, "has_residence_permit");
-  const intent = asString(record, "intends_to_remain");
   const dual = asString(record, "dual_residency_risk");
+  const hasStays = Number.isInteger(tripCount) && tripCount >= 1;
 
   return [
     {
       label: "Days of presence",
-      value: days ? (daysLabel[days] ?? "Not answered") : "Not answered",
-      note:
-        days === "183_plus"
-          ? "A long stay is one of the factors examined when residency is assessed."
-          : "Days of presence are one factor among several.",
+      value: hasStays ? "Recorded from stay dates" : "Not answered",
+      note: "Counted from entry and exit dates you recorded.",
     },
     {
       label: "Residence permit",
       value:
         permit === "yes" ? "Held" : permit === "no" ? "Not held" : "Not confirmed",
       note: "Immigration status and tax residency are assessed separately.",
-    },
-    {
-      label: "Intention to remain",
-      value:
-        intent === "yes"
-          ? "Indefinite"
-          : intent === "temporarily"
-            ? "Defined period"
-            : intent === "no"
-              ? "No"
-              : "Not confirmed",
-      note: "Stated intention is context, not a conclusion.",
     },
     {
       label: "Possible dual residency",
@@ -164,8 +143,9 @@ export interface TimelineEvent {
 
 export function residencyTimeline(record: DemoRecord): TimelineEvent[] {
   const events: TimelineEvent[] = [];
-  const entry = asString(record, "first_entry_date");
   const filingCountry = asString(record, "last_filing_country");
+  const tripCount = Number(asString(record, "brazil_trip_count"));
+  const hasTrips = Number.isInteger(tripCount) && tripCount >= 1;
 
   if (filingCountry && filingCountry !== "none" && filingCountry !== NOT_SURE) {
     events.push({
@@ -174,26 +154,38 @@ export function residencyTimeline(record: DemoRecord): TimelineEvent[] {
       detail: "Reported by you in the questionnaire.",
     });
   }
-  if (entry && entry !== NOT_SURE) {
-    events.push({
-      date: entry,
-      title: "First entry into Brazil in the relevant year",
-      detail: "Start of the presence period considered in the analysis.",
-    });
+  if (hasTrips) {
+    for (let index = 1; index <= tripCount; index += 1) {
+      const tripEntry = asString(record, `brazil_trip_${index}_entry`);
+      const tripExit = asString(record, `brazil_trip_${index}_exit`);
+      if (tripEntry && tripEntry !== NOT_SURE) {
+        events.push({
+          date: tripEntry,
+          title: `Entry into Brazil (stay ${index})`,
+          detail: "Used for the rolling 183-day presence test.",
+        });
+      }
+      if (tripExit && tripExit !== NOT_SURE) {
+        events.push({
+          date: tripExit,
+          title: `Exit from Brazil (stay ${index})`,
+          detail: "Closes this stay for the presence calendar.",
+        });
+      }
+    }
   }
-  const days = asString(record, "days_in_brazil");
-  if (days) {
+  if (hasTrips) {
     events.push({
       date: "Rolling twelve months",
       title: "Presence in Brazil recorded",
-      detail: "Counted from the estimate you provided.",
+      detail: "Counted from stay dates you provided.",
     });
   }
   if (asString(record, "currently_in_brazil") === "yes") {
     events.push({
       date: "Today",
       title: "Currently present in Brazil",
-      detail: "Ongoing presence, still to be confirmed with entry records.",
+      detail: "Ongoing presence from the last open stay.",
     });
   }
   events.push({

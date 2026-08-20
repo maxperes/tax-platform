@@ -201,18 +201,16 @@ import { resolveFiscalFieldBeingAsked } from "./fiscal-orchestration.js";
 
 /** Canned answers keyed by fiscal field. Fail the walk if a new field is added without a fixture. */
 const FISCAL_ANSWERS: Record<string, string> = {
+  physicallyLivesInBrazil: "yes",
+  brazilStaysText: "2024-01-01, 2024-06-15\n2024-09-01, ongoing",
   currentResidenceCountry: "Brazil",
   nationalityCountry: "Brazil",
-  physicallyLivesInBrazil: "yes",
-  daysInBrazilCalendarYear: "183+",
   isFiscalResidentBrazil: "yes",
   isFiscalResidentUSA: "no",
   fiscalResidenceOtherCountry: "no",
-  firstEntryBrazilDate: "not sure",
   immigrationStatus: "8",
   hasCpf: "yes",
   hasResidencePermit: "yes",
-  intendsToRemain: "yes",
   lastFilingCountry: "Brazil",
   filedBrazilianReturn: "yes",
   declaredPermanentExitBrazil: "not applicable",
@@ -477,13 +475,17 @@ describe("copilot chained stuck and skip regressions", () => {
 
   it("advances _lastAskedKey after a valid country answer", async () => {
     await answerTriage("1");
-    expect(resolveFiscalFieldBeingAsked(sessionCtx(), lastAssistant())).toBe("currentResidenceCountry");
+    expect(resolveFiscalFieldBeingAsked(sessionCtx(), lastAssistant())).toBe("physicallyLivesInBrazil");
 
-    const next = await say("Brazil");
+    const inBrazil = await say("yes");
+    expect(inBrazil.sessionState).toBe("fiscal_residence");
+    expect(isValidFiscalFieldValue("physicallyLivesInBrazil", inBrazil.ctx.physicallyLivesInBrazil)).toBe(true);
+    expect(inBrazil.ctx._lastAskedKey).toBe("brazilStaysText");
+
+    const next = await say("2024-01-01, 2024-06-01");
     expect(next.sessionState).toBe("fiscal_residence");
-    expect(isValidFiscalFieldValue("currentResidenceCountry", next.ctx.currentResidenceCountry)).toBe(true);
-    expect(next.ctx._lastAskedKey).toBe("nationalityCountry");
-    expect(resolveFiscalFieldBeingAsked(next.ctx, next.assistantText)).toBe("nationalityCountry");
+    expect(next.ctx._lastAskedKey).toBe("currentResidenceCountry");
+    expect(resolveFiscalFieldBeingAsked(next.ctx, next.assistantText)).toBe("currentResidenceCountry");
   });
 
   it("keeps triage pending on unparseable input without looping", async () => {

@@ -3,6 +3,8 @@ import { Field } from "../form/Field";
 import { RadioGroup } from "../form/RadioGroup";
 import { MultiSelectGrid } from "../form/MultiSelectGrid";
 import { NotSureToggle } from "../form/NotSureToggle";
+import { BrazilStayEditor } from "../form/BrazilStayEditor";
+import { collectBrazilStaysFromInterview } from "@tax-platform/shared";
 import { NOT_SURE, type AnswerValue, type StepDef } from "../../lib/interview/types";
 
 interface Props {
@@ -10,9 +12,26 @@ interface Props {
   answers: Record<string, AnswerValue | undefined>;
   errors: Record<string, string>;
   onAnswer: (id: string, value: AnswerValue | undefined) => void;
+  onBatchAnswer?: (patch: Record<string, AnswerValue | undefined>) => void;
+  twinId?: string;
+  taxYear?: number;
 }
 
-export function StepRenderer({ step, answers, errors, onAnswer }: Props) {
+export function StepRenderer({
+  step,
+  answers,
+  errors,
+  onAnswer,
+  onBatchAnswer,
+  twinId,
+  taxYear
+}: Props) {
+  const batchUpdate =
+    onBatchAnswer ??
+    ((patch: Record<string, AnswerValue | undefined>) => {
+      for (const [id, value] of Object.entries(patch)) onAnswer(id, value);
+    });
+
   return (
     <div className="space-y-4">
       {step.questions.map((question) => {
@@ -27,12 +46,24 @@ export function StepRenderer({ step, answers, errors, onAnswer }: Props) {
             key={question.id}
             label={question.label}
             help={question.help}
-            htmlFor={question.type === "multiselect" || question.type === "radio" ? undefined : question.id}
-            asGroup={question.type === "multiselect" || question.type === "radio"}
+            htmlFor={
+              question.type === "multiselect" || question.type === "radio" || question.type === "stays"
+                ? undefined
+                : question.id
+            }
+            asGroup={question.type === "multiselect" || question.type === "radio" || question.type === "stays"}
             required={question.required}
             error={error}
           >
-            {question.type === "multiselect" ? (
+            {question.type === "stays" ? (
+              <BrazilStayEditor
+                answers={answers}
+                onBatchUpdate={batchUpdate}
+                invalid={Boolean(error)}
+                twinId={twinId}
+                taxYear={taxYear}
+              />
+            ) : question.type === "multiselect" ? (
               <MultiSelectGrid
                 name={question.id}
                 label={question.label}
@@ -72,4 +103,10 @@ export function StepRenderer({ step, answers, errors, onAnswer }: Props) {
       })}
     </div>
   );
+}
+
+/** Returns true when at least one stay has a valid entry date. */
+export function hasValidBrazilStays(answers: Record<string, AnswerValue | undefined>): boolean {
+  const stays = collectBrazilStaysFromInterview({ answers });
+  return Boolean(stays && stays.length > 0);
 }

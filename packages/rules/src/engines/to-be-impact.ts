@@ -304,9 +304,13 @@ export function buildToBeImpact(input: {
   const bensRequired = irpfRequired && (hasAssets || hasAccounts || hasEntities || hasTrusts);
   const darfRequired = carneRequired || gcapRequired;
   const alreadyFiledExit = asIs.inventory.residency.priorPermanentExitBrazil === true;
+  const stays = asIs.inventory.residency.brazilStays ?? [];
+  const lastStay = stays.length > 0 ? stays[stays.length - 1] : undefined;
   const leftWithoutFiling =
     !alreadyFiledExit &&
-    (residency.lifecycleState === "exit" || asIs.inventory.residency.intendsToRemain === "no") &&
+    (residency.lifecycleState === "exit" ||
+      (asIs.inventory.residency.physicallyLivesInBrazil === false &&
+        Boolean(lastStay?.exitDate))) &&
     Boolean(asIs.inventory.residency.firstEntryBrazilDate);
   const exitRequired = leftWithoutFiling;
 

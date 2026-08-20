@@ -92,12 +92,12 @@ describe("runLlmTurn fiscal_residence", () => {
     const result = await handleUserMessage("sess-llm", "yes");
 
     expect(runAssistantWithTools).not.toHaveBeenCalled();
-    expect(result.assistantText).toMatch(/days did you spend in Brazil/i);
+    expect(result.assistantText).toMatch(/entry and exit dates/i);
     expect(result.assistantText).not.toMatch(/progress on the fiscal profile/i);
     expect(result.assistantText).not.toMatch(/can't answer unrelated/i);
     expect(store.session?.contextJson).toMatchObject({
       physicallyLivesInBrazil: true,
-      _lastAskedKey: "daysInBrazilCalendarYear"
+      _lastAskedKey: "brazilStaysText"
     });
   });
 

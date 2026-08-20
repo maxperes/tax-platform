@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import { api } from "../api";
 import { LoadingShell } from "../components/LoadingShell";
 import { AssessmentShell } from "../components/layout/AssessmentShell";
-import { StepRenderer } from "../components/assessment/StepRenderer";
+import { StepRenderer, hasValidBrazilStays } from "../components/assessment/StepRenderer";
 import { AssessmentSummary } from "../components/assessment/AssessmentSummary";
 import { PrimaryButton } from "../components/ui/PrimaryButton";
 import { SecondaryButton } from "../components/ui/SecondaryButton";
@@ -105,11 +105,25 @@ export function InterviewPage() {
     });
   };
 
+  const setAnswers = (patch: Record<string, AnswerValue | undefined>) => {
+    setRecord((current) => {
+      const next = { ...current, answers: { ...current.answers, ...patch } };
+      scheduleSave(next);
+      return next;
+    });
+  };
+
   const validate = (): boolean => {
     if (!step) return true;
     const next: Record<string, string> = {};
     for (const question of step.questions) {
       if (!question.required) continue;
+      if (question.type === "stays") {
+        if (!hasValidBrazilStays(record.answers)) {
+          next[question.id] = "Add at least one Brazil entry date to continue.";
+        }
+        continue;
+      }
       const value = record.answers[question.id];
       const answered = Array.isArray(value) ? value.length > 0 : typeof value === "string" && value.length > 0;
       if (!answered) {
@@ -186,7 +200,17 @@ export function InterviewPage() {
               }}
             />
           ) : (
-            step && <StepRenderer step={step} answers={record.answers} errors={errors} onAnswer={setAnswer} />
+            step && (
+              <StepRenderer
+                step={step}
+                answers={record.answers}
+                errors={errors}
+                onAnswer={setAnswer}
+                onBatchAnswer={setAnswers}
+                twinId={twin.id}
+                taxYear={twin.taxYear}
+              />
+            )
           )}
         </div>
 

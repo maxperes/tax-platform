@@ -76,21 +76,21 @@ function parseNumberedChoice(text: string, options: { id: string }[]): string | 
 
 const FISCAL_CORE_FIELDS: FiscalFieldDef[] = [
   {
+    key: "physicallyLivesInBrazil",
+    prompt: "Are you currently in Brazil? (yes/no)"
+  },
+  {
+    key: "brazilStaysText",
+    prompt:
+      "Record your Brazil entry and exit dates. One stay per line: **ENTRY YYYY-MM-DD, EXIT YYYY-MM-DD** (write **ongoing** if still in Brazil). Example:\n2024-03-01, 2024-06-15\n2024-09-01, ongoing"
+  },
+  {
     key: "currentResidenceCountry",
     prompt: "Where do you actually live today? Reply with a country name or ISO code (e.g. Brazil or BR)."
   },
   {
     key: "nationalityCountry",
     prompt: "What is your country of citizenship / nationality? (e.g. United States or US)"
-  },
-  {
-    key: "physicallyLivesInBrazil",
-    prompt: "Are you currently in Brazil? (yes/no)"
-  },
-  {
-    key: "daysInBrazilCalendarYear",
-    prompt:
-      "Approximately how many days did you spend in Brazil in the last twelve months? Reply with **0–366**, a band (**under 30**, **31–90**, **91–182**, **183+**), or **not sure**."
   },
   {
     key: "isFiscalResidentBrazil",
@@ -108,11 +108,6 @@ const FISCAL_CORE_FIELDS: FiscalFieldDef[] = [
 
 const FISCAL_MAP_FIELDS: FiscalFieldDef[] = [
   {
-    key: "firstEntryBrazilDate",
-    prompt:
-      "Date of first entry into Brazil in the relevant year (**YYYY-MM-DD**). Reply **none** if you did not enter, or **not sure**."
-  },
-  {
     key: "immigrationStatus",
     prompt: formatNumberedChoices(
       "What Brazilian immigration status applies?",
@@ -127,10 +122,6 @@ const FISCAL_MAP_FIELDS: FiscalFieldDef[] = [
   {
     key: "hasResidencePermit",
     prompt: "Do you have a Brazilian residence permit? (yes/no / not sure)"
-  },
-  {
-    key: "intendsToRemain",
-    prompt: "Do you intend to remain in Brazil? Reply **yes** (indefinitely), **temporarily**, **no**, or **not sure**."
   },
   {
     key: "lastFilingCountry",
@@ -224,8 +215,6 @@ const MARITAL_STATUS_OPTIONS: { id: "single" | "married" | "stable_union" | "div
 
 const MARITAL_VALUES = new Set<string>(MARITAL_STATUS_OPTIONS.map((o) => o.id));
 
-const INTENDS_VALUES = new Set(["yes", "temporarily", "no"]);
-
 function isNotSureToken(raw: string): boolean {
   return NOT_SURE_TOKENS.test(raw.trim());
 }
@@ -282,13 +271,30 @@ function parseMaritalStatus(raw: string): string | "not_sure" | undefined {
   return undefined;
 }
 
-function parseIntendsToRemain(raw: string): string | "not_sure" | undefined {
-  const t = raw.trim().toLowerCase();
-  if (isNotSureToken(t)) return "not_sure";
-  if (["yes", "indefinitely", "indefinite"].includes(t)) return "yes";
-  if (["temporarily", "temporary", "defined", "defined_period"].includes(t)) return "temporarily";
-  if (["no", "n"].includes(t)) return "no";
-  return undefined;
+function parseBrazilStaysText(raw: string): Array<{ entryDate: string; exitDate?: string }> | "not_sure" | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  if (isNotSureToken(trimmed)) return "not_sure";
+
+  const stays: Array<{ entryDate: string; exitDate?: string }> = [];
+  const lines = trimmed.split(/\n+/);
+  for (const line of lines) {
+    const parts = line.split(/[,/|]+/).map((p) => p.trim()).filter(Boolean);
+    if (parts.length === 0) continue;
+    const entryMatch = parts[0]?.match(/(\d{4}-\d{2}-\d{2})/);
+    if (!entryMatch) continue;
+    const entryDate = entryMatch[1]!;
+    let exitDate: string | undefined;
+    if (parts[1]) {
+      const exitLower = parts[1].toLowerCase();
+      if (!/ongoing|open|present|still|blank|none/.test(exitLower)) {
+        const exitMatch = parts[1].match(/(\d{4}-\d{2}-\d{2})/);
+        if (exitMatch) exitDate = exitMatch[1];
+      }
+    }
+    stays.push(exitDate ? { entryDate, exitDate } : { entryDate });
+  }
+  return stays.length > 0 ? stays : undefined;
 }
 
 export function parseBool(text: string): boolean | undefined {
@@ -378,7 +384,12 @@ export function coerceFiscalFieldValue(key: string, raw: string): unknown {
     if (parsed === "not_sure" || parsed === "skip") return parsed;
     if (parsed !== undefined) return parsed;
   }
-  if (key === "daysInBrazilCalendarYear" || key === "daysInUSACalendarYear") {
+  if (key === "brazilStaysText") {
+    const stays = parseBrazilStaysText(raw);
+    if (stays === "not_sure") return "not_sure";
+    if (stays !== undefined) return stays;
+  }
+  if (key === "daysInUSACalendarYear") {
     const days = parseDaysInBrazil(raw);
     if (days !== undefined) return days;
   }
@@ -394,11 +405,7 @@ export function coerceFiscalFieldValue(key: string, raw: string): unknown {
     const v = parseMaritalStatus(raw);
     if (v !== undefined) return v;
   }
-  if (key === "intendsToRemain") {
-    const v = parseIntendsToRemain(raw);
-    if (v !== undefined) return v;
-  }
-  if (key === "birthDate" || key === "firstEntryBrazilDate") {
+  if (key === "birthDate") {
     const t = raw.trim();
     if (isNotSureToken(t) || SKIP_TOKENS.test(t)) return "not_sure";
     if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
@@ -473,10 +480,23 @@ export function isValidFiscalFieldValue(key: string, raw: unknown): boolean {
     if (typeof raw === "string" && /^(none|n\/a|skip)$/i.test(raw.trim())) return true;
     return typeof raw === "string" && raw.trim().length >= 1;
   }
-  if (key === "daysInBrazilCalendarYear" || key === "daysInUSACalendarYear") {
+  if (key === "daysInUSACalendarYear") {
     if (raw === "not_sure" || isNotSureValue(raw)) return true;
     const n = typeof raw === "number" ? raw : Number(raw);
     return Number.isInteger(n) && n >= 0 && n <= 366;
+  }
+  if (key === "brazilStaysText") {
+    if (raw === "not_sure" || isNotSureValue(raw)) return true;
+    if (Array.isArray(raw) && raw.length > 0) {
+      return raw.every(
+        (stay) =>
+          stay &&
+          typeof stay === "object" &&
+          typeof (stay as { entryDate?: unknown }).entryDate === "string" &&
+          /^\d{4}-\d{2}-\d{2}$/.test((stay as { entryDate: string }).entryDate)
+      );
+    }
+    return false;
   }
   if (key === "dependentsCount") {
     const n = typeof raw === "number" ? raw : Number(raw);
@@ -487,9 +507,6 @@ export function isValidFiscalFieldValue(key: string, raw: unknown): boolean {
   }
   if (key === "maritalStatus") {
     return raw === "not_sure" || (typeof raw === "string" && MARITAL_VALUES.has(raw));
-  }
-  if (key === "intendsToRemain") {
-    return raw === "not_sure" || (typeof raw === "string" && INTENDS_VALUES.has(raw));
   }
   if (typeof raw !== "string") return false;
   const t = raw.trim();
@@ -505,9 +522,6 @@ export function isValidFiscalFieldValue(key: string, raw: unknown): boolean {
     if (typeof raw !== "string") return false;
     const coerced = coerceFiscalFieldValue("birthDate", raw);
     return typeof coerced === "string" && /^\d{4}-\d{2}-\d{2}$/.test(coerced);
-  }
-  if (key === "firstEntryBrazilDate") {
-    return t === "not_sure" || isNotSureToken(t) || SKIP_TOKENS.test(t) || /^\d{4}-\d{2}-\d{2}$/.test(t);
   }
   if (key === "fullName") return t.length >= 1;
   if (key === "email") return fiscalResidenceSchema.shape.email.safeParse(t).success;
@@ -541,8 +555,11 @@ export function looksLikeFiscalFieldAnswer(key: string, text: string): boolean {
     if (/^(none|n\/a|skip)$/i.test(t)) return true;
     return /\d/.test(t) && t.length >= 4;
   }
-  if (key === "daysInBrazilCalendarYear" || key === "daysInUSACalendarYear") {
+  if (key === "daysInUSACalendarYear") {
     return parseDaysInBrazil(t) !== undefined;
+  }
+  if (key === "brazilStaysText") {
+    return parseBrazilStaysText(t) !== undefined || isNotSureToken(t);
   }
   if (key === "dependentsCount") {
     const n = Number(t);
@@ -550,9 +567,8 @@ export function looksLikeFiscalFieldAnswer(key: string, text: string): boolean {
   }
   if (key === "immigrationStatus") return parseImmigrationStatus(t) !== undefined;
   if (key === "maritalStatus") return parseMaritalStatus(t) !== undefined;
-  if (key === "intendsToRemain") return parseIntendsToRemain(t) !== undefined;
   if (key === "email") return t.includes("@") && t.includes(".");
-  if (key === "birthDate" || key === "firstEntryBrazilDate") {
+  if (key === "birthDate") {
     return isNotSureToken(t) || SKIP_TOKENS.test(t) || looksLikeDateAnswer(t);
   }
   if (key === "nationalityCountry" || key === "currentResidenceCountry" || key === "lastFilingCountry") {
@@ -602,8 +618,8 @@ const FISCAL_FIELD_ASSISTANT_HINTS: Record<string, RegExp[]> = {
     /fiscal residence in any other country/i,
     /other country besides brazil and the usa/i
   ],
-  daysInBrazilCalendarYear: [/days.*brazil/i, /spent in brazil/i],
   daysInUSACalendarYear: [/days.*(united states|u\.?s\.?)/i, /spent in the united states/i],
+  brazilStaysText: [/entry and exit dates/i, /brazil entry/i, /record your brazil/i],
   hasUSCitizenship: [/u\.?s\.? citizenship/i],
   hasGreenCard: [/green card/i],
   declaredPermanentExitBrazil: [
@@ -614,8 +630,6 @@ const FISCAL_FIELD_ASSISTANT_HINTS: Record<string, RegExp[]> = {
   ],
   hasCpf: [/\bcpf\b/i],
   hasResidencePermit: [/residence permit/i],
-  intendsToRemain: [/intend to remain/i],
-  firstEntryBrazilDate: [/first entry/i],
   immigrationStatus: [/immigration status/i],
   lastFilingCountry: [/file(d)? a tax return last year/i, /where did you file/i],
   filedBrazilianReturn: [/filed a brazilian tax return/i],
@@ -669,12 +683,10 @@ export function prepareFiscalPayloadForValidation(merged: Record<string, unknown
   coerceFiscalBooleansInPlace(out);
 
   const stripKeys = [
-    "daysInBrazilCalendarYear",
     "daysInUSACalendarYear",
-    "firstEntryBrazilDate",
+    "brazilStaysText",
     "immigrationStatus",
     "maritalStatus",
-    "intendsToRemain",
     "lastFilingCountry",
     "hasCpf",
     "hasResidencePermit",
@@ -683,6 +695,21 @@ export function prepareFiscalPayloadForValidation(merged: Record<string, unknown
   ];
   for (const key of stripKeys) {
     if (isNotSureValue(out[key]) || out[key] === "skip") delete out[key];
+  }
+
+  const staysRaw = out.brazilStaysText;
+  if (Array.isArray(staysRaw) && staysRaw.length > 0) {
+    out.brazilStays = staysRaw;
+  }
+  delete out.brazilStaysText;
+
+  if (Array.isArray(out.brazilStays) && out.brazilStays.length > 0) {
+    const sorted = [...out.brazilStays].sort((a, b) =>
+      String((a as { entryDate: string }).entryDate).localeCompare(
+        String((b as { entryDate: string }).entryDate)
+      )
+    );
+    out.firstEntryBrazilDate = (sorted[0] as { entryDate: string }).entryDate;
   }
   const count = out.dependentsCount;
   if (typeof count === "number") {

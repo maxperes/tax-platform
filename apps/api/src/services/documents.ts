@@ -1,9 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { documentKindSchema, twinInventorySchema, brazilianTaxTreatmentSchema } from "@tax-platform/shared";
+import {
+  documentKindSchema,
+  twinInventorySchema,
+  brazilianTaxTreatmentSchema,
+  syncBrazilStaysToInterviewAnswers,
+  brazilStaySchema,
+  parseInterviewRecord,
+  type InterviewRecord
+} from "@tax-platform/shared";
 import { prisma } from "../db.js";
 import { Prisma } from "../prisma-client.js";
 import { extractFactsFromDocumentContent } from "./document-extract.js";
+import { extractBrazilStaysFromPassportImage } from "./passport-vision.js";
 import { putObject, readObject } from "./object-storage.js";
 import { enqueueJob, JOB_NAMES } from "./jobs/queue.js";
 
@@ -19,15 +28,18 @@ const metaSchema = z.object({
 
 /**
  * Heuristic extract-and-confirm: proposes facts from document kind + filename.
- * Does not OCR; user must confirm before Twin merge.
+ * Passport images may also run vision extraction in the background worker.
  */
 export function proposeExtractedFacts(kind: z.infer<typeof documentKindSchema>, fileName: string) {
   const base = { sourceFileName: fileName, kind, proposedAt: new Date().toISOString() };
   if (kind === "passport") {
     return {
       ...base,
+      status: "pending",
       suggestions: {
-        residency: { notes: "Confirm nationality and identity from passport" },
+        residency: {
+          notes: "Upload a passport stamp photo to propose Brazil entry and exit dates — confirm before saving."
+        },
         countryFootprint: [] as unknown[]
       }
     };
@@ -108,11 +120,32 @@ export async function runDocumentExtraction(userId: string, documentId: string) 
   try {
     const bytes = await readObject(doc.storagePath);
     const parsed = extractFactsFromDocumentContent(bytes, doc.originalFileName);
-    if (parsed) {
+    if (kind === "passport") {
+      const vision = await extractBrazilStaysFromPassportImage(
+        bytes,
+        doc.originalFileName,
+        doc.mimeType ?? undefined
+      );
       extracted = {
         ...heuristic,
         sourceFileName: doc.originalFileName,
         kind,
+        status: "complete",
+        extractionSource: vision.extractionSource,
+        suggestions: {
+          ...(typeof heuristic.suggestions === "object" ? heuristic.suggestions : {}),
+          residency: {
+            brazilStays: vision.brazilStays,
+            notes: vision.notes ?? "Confirm Brazil entry and exit dates before saving."
+          }
+        }
+      };
+    } else if (parsed) {
+      extracted = {
+        ...heuristic,
+        sourceFileName: doc.originalFileName,
+        kind,
+        status: "complete",
         extractionSource: parsed.source,
         suggestions: {
           ...(typeof heuristic.suggestions === "object" ? heuristic.suggestions : {}),
@@ -124,10 +157,10 @@ export async function runDocumentExtraction(userId: string, documentId: string) 
         }
       };
     } else {
-      extracted = { ...heuristic, extractionSource: "filename_heuristic" };
+      extracted = { ...heuristic, status: "complete", extractionSource: "filename_heuristic" };
     }
   } catch {
-    extracted = { ...heuristic, extractionSource: "filename_heuristic" };
+    extracted = { ...heuristic, status: "complete", extractionSource: "filename_heuristic" };
   }
   await prisma.document.update({
     where: { id: doc.id },
@@ -141,6 +174,45 @@ export async function listDocuments(userId: string, taxYear?: number) {
     where: { userId, ...(taxYear ? { taxYear } : {}) },
     orderBy: { createdAt: "desc" }
   });
+}
+
+function mergeConfirmedBrazilStays(
+  inventoryResidency: { brazilStays?: z.infer<typeof brazilStaySchema>[] },
+  stays: z.infer<typeof brazilStaySchema>[]
+): void {
+  const normalized = stays
+    .map((s) => brazilStaySchema.safeParse(s))
+    .filter((r) => r.success)
+    .map((r) => r.data);
+  if (normalized.length === 0) return;
+  const existing = inventoryResidency.brazilStays ?? [];
+  const merged = [...existing];
+  for (const stay of normalized) {
+    const duplicate = merged.some(
+      (s) => s.entryDate === stay.entryDate && (s.exitDate ?? "") === (stay.exitDate ?? "")
+    );
+    if (!duplicate) merged.push(stay);
+  }
+  merged.sort((a, b) => a.entryDate.localeCompare(b.entryDate));
+  inventoryResidency.brazilStays = merged;
+}
+
+function mergeStaysIntoInterview(
+  interview: InterviewRecord,
+  stays: z.infer<typeof brazilStaySchema>[]
+): InterviewRecord {
+  const normalized = stays
+    .map((s) => brazilStaySchema.safeParse(s))
+    .filter((r) => r.success)
+    .map((r) => r.data);
+  if (normalized.length === 0) return interview;
+
+  const currentlyInBrazil = interview.answers.currently_in_brazil === "yes";
+  const patch = syncBrazilStaysToInterviewAnswers(normalized, currentlyInBrazil);
+  return {
+    ...interview,
+    answers: { ...interview.answers, ...patch }
+  };
 }
 
 export async function confirmDocument(userId: string, documentId: string, mergeIntoTwin: boolean) {
@@ -167,9 +239,21 @@ export async function confirmDocument(userId: string, documentId: string, mergeI
           incomes?: TwinIncomeLike[];
           financialAccountsSummary?: string[];
           notes?: string;
+          residency?: {
+            brazilStays?: z.infer<typeof brazilStaySchema>[];
+            notes?: string;
+          };
         };
       };
       const suggestions = facts.suggestions ?? {};
+
+      if (suggestions.residency?.brazilStays?.length) {
+        mergeConfirmedBrazilStays(inventory.residency, suggestions.residency.brazilStays);
+        if (suggestions.residency.notes) {
+          inventory.notes = [inventory.notes, suggestions.residency.notes].filter(Boolean).join("\n");
+        }
+      }
+
       if (suggestions.incomes?.length) {
         inventory.incomes.push(
           ...suggestions.incomes.map((i) => {
@@ -196,9 +280,19 @@ export async function confirmDocument(userId: string, documentId: string, mergeI
       if (suggestions.notes) {
         inventory.notes = [inventory.notes, suggestions.notes].filter(Boolean).join("\n");
       }
+
+      const updateData: Prisma.TwinCaseUpdateInput = {
+        inventoryJson: inventory as Prisma.InputJsonValue
+      };
+      if (suggestions.residency?.brazilStays?.length) {
+        const interview = parseInterviewRecord(twin.interviewJson);
+        const mergedInterview = mergeStaysIntoInterview(interview, suggestions.residency.brazilStays);
+        updateData.interviewJson = mergedInterview as unknown as Prisma.InputJsonValue;
+      }
+
       await prisma.twinCase.update({
         where: { id: twin.id },
-        data: { inventoryJson: inventory as Prisma.InputJsonValue }
+        data: updateData
       });
     }
   }

@@ -6,6 +6,7 @@ import {
   type InterviewAnswers,
   type InterviewRecord
 } from "./interview-record.js";
+import { syncBrazilStaysToInterviewAnswers } from "./brazil-stays.js";
 
 const INTERVIEW_COUNTRIES = new Set([
   "us",
@@ -151,14 +152,6 @@ function boolToYesNo(value: boolean | undefined): string | undefined {
   return value ? "yes" : "no";
 }
 
-function daysToBand(days: number | undefined): string | undefined {
-  if (days === undefined || !Number.isFinite(days)) return undefined;
-  if (days <= 30) return "0_30";
-  if (days <= 90) return "31_90";
-  if (days <= 182) return "91_182";
-  return "183_plus";
-}
-
 function normalizeToken(raw: string): string {
   return raw.trim().toLowerCase().replace(/[\s-]+/g, "_");
 }
@@ -207,12 +200,23 @@ function mapFiscalToAnswers(fiscal: FiscalResidence): InterviewAnswers {
   const inBrazil = boolToYesNo(fiscal.physicallyLivesInBrazil);
   if (inBrazil) answers.currently_in_brazil = inBrazil;
 
-  const days = daysToBand(fiscal.daysInBrazilCalendarYear);
-  if (days) answers.days_in_brazil = days;
+  if (fiscal.brazilStays && fiscal.brazilStays.length > 0) {
+    Object.assign(
+      answers,
+      syncBrazilStaysToInterviewAnswers(
+        fiscal.brazilStays,
+        fiscal.physicallyLivesInBrazil === true
+      )
+    );
+  } else if (fiscal.firstEntryBrazilDate) {
+    answers.brazil_trip_count = "1";
+    answers.brazil_trip_1_entry = fiscal.firstEntryBrazilDate;
+    if (fiscal.physicallyLivesInBrazil !== true && fiscal.fiscalResidenceBrazilEndDate) {
+      answers.brazil_trip_1_exit = fiscal.fiscalResidenceBrazilEndDate;
+    }
+  }
 
-  if (fiscal.firstEntryBrazilDate) answers.first_entry_date = fiscal.firstEntryBrazilDate;
   if (fiscal.immigrationStatus) answers.immigration_status = fiscal.immigrationStatus;
-  if (fiscal.intendsToRemain) answers.intends_to_remain = fiscal.intendsToRemain;
   if (fiscal.maritalStatus) answers.marital_status = fiscal.maritalStatus;
 
   const permit = boolToYesNo(fiscal.hasResidencePermit);

@@ -56,7 +56,7 @@ export interface Option {
   description?: string;
 }
 
-export type QuestionType = "text" | "date" | "number" | "select" | "radio" | "multiselect";
+export type QuestionType = "text" | "date" | "number" | "select" | "radio" | "multiselect" | "stays";
 
 export interface QuestionDef {
   id: string;
