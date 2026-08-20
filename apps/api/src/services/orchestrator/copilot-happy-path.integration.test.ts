@@ -333,7 +333,9 @@ function expectedFiscalKeys(): string[] {
     nationalityCountry: "BR",
     isFiscalResidentBrazil: true,
     isFiscalResidentUSA: false,
-    fiscalResidenceOtherCountry: false
+    fiscalResidenceOtherCountry: false,
+    immigrationStatus: "citizen",
+    lastFilingCountry: "BR"
   }).map((field) => field.key);
 }
 

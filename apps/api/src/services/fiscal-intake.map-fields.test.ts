@@ -61,6 +61,22 @@ describe("map-aligned fiscal fields", () => {
     expect(isValidFiscalFieldValue("immigrationStatus", "digital_nomad")).toBe(true);
   });
 
+  it("asks residence permit and Brazilian return only when not already implied", () => {
+    const citizenFiledInBrazil = getActiveFiscalFieldOrder({
+      immigrationStatus: "citizen",
+      lastFilingCountry: "BR"
+    }).map((f) => f.key);
+    expect(citizenFiledInBrazil).not.toContain("hasResidencePermit");
+    expect(citizenFiledInBrazil).not.toContain("filedBrazilianReturn");
+
+    const touristFiledAbroad = getActiveFiscalFieldOrder({
+      immigrationStatus: "tourist",
+      lastFilingCountry: "US"
+    }).map((f) => f.key);
+    expect(touristFiledAbroad).toContain("hasResidencePermit");
+    expect(touristFiledAbroad).toContain("filedBrazilianReturn");
+  });
+
   it("accepts immigration tokens", () => {
     expect(coerceFiscalFieldValue("immigrationStatus", "digital nomad")).toBe("digital_nomad");
     expect(isValidFiscalFieldValue("hasCpf", true)).toBe(true);

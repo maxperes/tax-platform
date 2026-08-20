@@ -655,6 +655,10 @@ describe("handleUserMessage orchestrator pipeline", () => {
         fiscalResidenceOtherCountry: false,
         immigrationStatus: "none",
         hasCpf: true,
+        lastFilingCountry: "none",
+        declaredPermanentExitBrazil: false,
+        maritalStatus: "single",
+        dependentsCount: 0,
         birthDate: "1988-01-01",
         _lastAskedKey: "hasResidencePermit"
       }
