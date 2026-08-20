@@ -58,7 +58,7 @@ export function resolveBrlFromIncome(input: {
         amountBrl: input.grossAmount * ptax,
         exchangeRate: ptax,
         requiresAdditionalReview: false,
-        notes: `PTAX ${currency}/BRL for ${input.paymentDate.slice(0, 7)}`
+        notes: `PTAX ${currency}/BRL statutory prior-month proxy for ${input.paymentDate}`
       };
     }
   }
@@ -104,7 +104,7 @@ export function resolveUsdFromIncome(input: {
         amountUsd: input.grossAmount * ptax,
         exchangeRate: ptax,
         requiresAdditionalReview: false,
-        notes: `PTAX ${currency}/USD for ${input.paymentDate.slice(0, 7)}`
+        notes: `PTAX ${currency}/USD statutory prior-month proxy for ${input.paymentDate}`
       };
     }
   }
@@ -121,7 +121,7 @@ export function resolveUsdFromIncome(input: {
         amountUsd: amountBrl * brlToUsd,
         exchangeRate: brlToUsd,
         requiresAdditionalReview: false,
-        notes: `Via BRL then PTAX BRL/USD for ${input.paymentDate.slice(0, 7)}`
+        notes: `Via BRL then PTAX BRL/USD statutory prior-month proxy for ${input.paymentDate}`
       };
     }
   }

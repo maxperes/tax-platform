@@ -19,7 +19,6 @@ import {
   getUsRulePackForYear,
   buildBrAnnualEstimate,
   buildUsAnnualEstimate,
-  aggregateMonthlyCarnetLeao,
   buildTaxReportSummary,
   resolveBrlFromIncome,
   resolveUsdFromIncome,
@@ -31,7 +30,9 @@ import {
   isLei14754Eligible,
   allocateMonthlyOffsets,
   convertForeignTaxToBrl,
-  convertForeignTaxToUsd
+  convertForeignTaxToUsd,
+  classifiedIncomeToIrpfExtItem,
+  computeMonthlyViaIrpfExt001
 } from "@tax-platform/rules";
 import type { Prisma, TaxCalculation } from "../prisma-client.js";
 import { prisma } from "../db.js";
@@ -41,6 +42,25 @@ type Db = Prisma.TransactionClient | typeof prisma;
 
 function dbClient(tx?: Prisma.TransactionClient): Db {
   return tx ?? prisma;
+}
+
+function residencyContextFromFiscal(
+  data: unknown,
+  taxYear: number
+): { start: string; end?: string; dependents: number; age?: number } {
+  const raw = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+  const start =
+    (typeof raw.fiscalResidenceBrazilStartDate === "string" && raw.fiscalResidenceBrazilStartDate) ||
+    (typeof raw.firstEntryBrazilDate === "string" && raw.firstEntryBrazilDate) ||
+    `${taxYear}-01-01`;
+  const end =
+    typeof raw.fiscalResidenceBrazilEndDate === "string" ? raw.fiscalResidenceBrazilEndDate : undefined;
+  const dependents = typeof raw.dependentsCount === "number" ? raw.dependentsCount : 0;
+  let age: number | undefined;
+  if (typeof raw.birthDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.birthDate)) {
+    age = Math.max(0, taxYear - Number(raw.birthDate.slice(0, 4)));
+  }
+  return { start, end, dependents, age };
 }
 
 const incomeRowBaseSchema = incomeSourceSchema.omit({ classification: true });
@@ -288,7 +308,36 @@ export async function recomputeMonthlyTax(
       notes: fx.notes
     });
   }
-  const aggregates = aggregateMonthlyCarnetLeao(items, { ruleVersion: ruleStamp, pack: brPack });
+  const residencyCtx = residencyContextFromFiscal(fp?.data, taxYear);
+  const lei14754Items = items.filter((it) => it.lei14754Eligible);
+  const irpfExtSource = items.filter((it) => !it.lei14754Eligible);
+  const irpfExtItens = irpfExtSource.map((it) => {
+    const row = carnetRows.find((r) => r.id === it.incomeSourceId);
+    const cls = row ? classifiedFromDbIncome(row, profile).classification : undefined;
+    return classifiedIncomeToIrpfExtItem({
+      id: it.incomeSourceId ?? it.incomeType,
+      originCountry: it.originCountry,
+      incomeType: it.incomeType,
+      nature: row?.nature,
+      originalCurrency: it.originalCurrency,
+      grossAmount: it.originalAmount,
+      paymentDate: it.paymentDate,
+      taxPaidOriginCountry: it.foreignTaxPaid,
+      exchangeRateToBrl: row?.exchangeRateToBrl?.toNumber() ?? (it.exchangeRate > 0 ? it.exchangeRate : undefined),
+      classification: cls
+    });
+  });
+  const aggregates = computeMonthlyViaIrpfExt001({
+    residencyStart: residencyCtx.start,
+    residencyEnd: residencyCtx.end,
+    dependents: residencyCtx.dependents,
+    age: residencyCtx.age,
+    itens: irpfExtItens,
+    lei14754Items,
+    pack: brPack,
+    ruleVersion: ruleStamp,
+    sourceItems: irpfExtSource
+  });
   for (const agg of aggregates) {
     const parent = await db.monthlyTaxCalculation.upsert({
       where: {
@@ -475,7 +524,22 @@ export async function estimateAnnualTax(
         grossBrl += fx.amountBrl;
         review ||= fx.requiresAdditionalReview;
       }
-      const dedBrl = deductions.reduce((s, d) => s + (d.amountBrl?.toNumber() ?? d.amount.toNumber()), 0);
+      const annualDedBrl = sumDeductionsForScope(
+        deductions.map((d) => ({
+          deductionType: d.deductionType,
+          amount: d.amount.toNumber(),
+          currency: d.currency,
+          amountBrl: d.amountBrl?.toNumber(),
+          taxPeriod: d.taxPeriod,
+          applicationScope: d.applicationScope as "monthly" | "annual" | "transaction",
+          relatedIncomeId: d.relatedIncomeId ?? undefined,
+          requiresProof: d.requiresProof ?? undefined,
+          proofDocumentUrl: d.proofDocumentUrl ?? undefined,
+          dataOrigin: d.dataOrigin as "manual"
+        })),
+        "annual",
+        "BRL"
+      );
       let foreignBrl = 0;
       for (const row of incomes) {
         const cls = classifiedFromDbIncome(row, profile).classification;
@@ -494,7 +558,7 @@ export async function estimateAnnualTax(
       const est = buildBrAnnualEstimate({
         taxYear,
         grossIncomeBrl: grossBrl,
-        deductionsTotalBrl: dedBrl,
+        deductionsTotalBrl: annualDedBrl,
         exemptionsTotalBrl: annualExemptionsBrl,
         foreignTaxPaidBrl: foreignBrl,
         requiresAdditionalReview: review,

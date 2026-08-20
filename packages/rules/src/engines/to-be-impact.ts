@@ -11,11 +11,12 @@ import type {
   TwinInventory,
   TwinPersonInput
 } from "@tax-platform/shared";
-import { taxFromProgressiveTable } from "../progressive.js";
-import { BR_IRPF_ANNUAL_2026 } from "../data/br/2026.js";
+import { brRulePack2026 } from "../data/br/2026.js";
 import { findRulesByTag, stampFromRules } from "../legal/reliability.js";
 import { getBrLegalRules, LEGAL_RULE_PACK_ID } from "../legal/packs/br-2026.js";
 import { applyBrIrpfExt001 } from "../legal/matriz/br-irpf-ext-001.js";
+import { convertToBrlCamBio001 } from "../legal/matriz/br-cambio-001.js";
+import { computeAggregatedGrossBrTax, grossRegimeFor } from "./gross-br-tax.js";
 import {
   computeBrazilianResidencyStart,
   hasBrazilVitalInterestConflict,
@@ -27,7 +28,7 @@ import { resolveIncomeTreatment } from "./income-treatment.js";
 /** Simplified CBE probes — official BACEN bands are in USD; stamp as probe, not a filing determination. */
 const CBE_ANNUAL_PROBE_BRL = 1_000_000;
 const CBE_QUARTERLY_PROBE_BRL = 100_000_000;
-const IRPF_EXEMPTION_BAND = BR_IRPF_ANNUAL_2026[0]?.upperBound ?? 28_559.7;
+const IRPF_EXEMPTION_BAND = brRulePack2026.annual[0]?.upperBound ?? 29_145.6;
 
 export type ToBeImpactResult = {
   hypothesisResidencyDate: string;
@@ -89,7 +90,8 @@ function explain(input: {
 
 /**
  * Legal Rules Engine — To Be layer.
- * Gross annual-table tax is always retained. BR-IRPF-EXT-001 + FX + FTC fill net fields.
+ * Gross tax is the annual table (or GCAP / Lei 14.754) on the aggregated BRL-converted base.
+ * BR-IRPF-EXT-001 + FX + FTC fill net fields.
  */
 export function buildToBeImpact(input: {
   inventory: TwinInventory;
@@ -178,16 +180,29 @@ export function buildToBeImpact(input: {
     }
   }
 
-  const categoryImpacts: CategoryImpactRow[] = matrizItems.map((row) => {
+  const convertedBrl = matrizItems.map((row) => {
+    const cambio = convertToBrlCamBio001({
+      valor: row.line.annualAmount,
+      moeda: row.line.currency,
+      dataDisponibilidade: row.dataDisponibilidade
+    });
+    return cambio.valorBrl;
+  });
+  const regimes = matrizItems.map((row) => grossRegimeFor(row.resolved, row.inBase));
+  const gross = computeAggregatedGrossBrTax({
+    amountBrlByLine: convertedBrl,
+    regimeByLine: regimes,
+    pack: brRulePack2026
+  });
+
+  const categoryImpacts: CategoryImpactRow[] = matrizItems.map((row, index) => {
     const { taxability, tags, treatment } = row.resolved;
     const matched = tags.flatMap((t) => findRulesByTag(rules, t, asOf));
     const ruleSet = matched.length > 0 ? matched : worldwide;
-    const tableTax =
-      taxability === "taxable_br" || taxability === "complex"
-        ? taxFromProgressiveTable(row.line.annualAmount, BR_IRPF_ANNUAL_2026)
-        : 0;
-    const estimatedBrGrossTax = tableTax;
-    const brazilianTax = row.inBase ? (brazilianTaxByItem.get(row.itemId) ?? (applyReliefs ? 0 : tableTax)) : 0;
+    const estimatedBrGrossTax = gross.taxByLine[index] ?? 0;
+    const brazilianTax = row.inBase
+      ? (brazilianTaxByItem.get(row.itemId) ?? (applyReliefs ? 0 : estimatedBrGrossTax))
+      : 0;
     const foreignTaxCredit = row.inBase ? (creditByItem.get(row.itemId) ?? 0) : 0;
     const netPayable = row.inBase
       ? (netByItem.get(row.itemId) ?? Math.max(0, brazilianTax - foreignTaxCredit))
@@ -209,8 +224,8 @@ export function buildToBeImpact(input: {
         : `Availability date ${row.dataDisponibilidade} is before Brazilian tax residency start ${residencyStart ?? "(none)"} — not an exemption.`,
       rule: `${ruleIds}; ${reliability.sourcesSummary}`,
       calculation: row.inBase
-        ? `Gross table tax ${estimatedBrGrossTax.toFixed(2)} BRL; matriz Brazilian tax ${brazilianTax.toFixed(2)}; FTC ${foreignTaxCredit.toFixed(2)}; net ${netPayable.toFixed(2)}`
-        : `Gross table tax ${estimatedBrGrossTax.toFixed(2)} BRL retained as Basic field; net payable 0 because item is fora_do_campo`,
+        ? `Converted ${convertedBrl[index]?.toFixed(2)} BRL; allocated gross ${estimatedBrGrossTax.toFixed(2)} (aggregated ${row.resolved.regimeBrasileiro}); matriz Brazilian tax ${brazilianTax.toFixed(2)}; FTC ${foreignTaxCredit.toFixed(2)}; net ${netPayable.toFixed(2)}`
+        : `Outside Brazilian tax base; allocated gross ${estimatedBrGrossTax.toFixed(2)} BRL; net payable 0 because item is fora_do_campo`,
       documentNeeded: row.line.originCountry.toUpperCase() === "US" ? "US pay statement / 1099 / SSA" : "Foreign income statement and tax paid proof",
       nextAction: row.inBase
         ? "Confirm amount, payment date, and foreign tax paid before filing analysis"
@@ -237,10 +252,7 @@ export function buildToBeImpact(input: {
     };
   });
 
-  const estimatedBrGrossTaxTotal = categoryImpacts.reduce(
-    (s, r) => s + (r.estimatedBrGrossTax ?? 0),
-    0
-  );
+  const estimatedBrGrossTaxTotal = gross.total;
   const brazilianTaxTotal = round2(categoryImpacts.reduce((s, r) => s + (r.brazilianTax ?? 0), 0));
   const foreignTaxCreditTotal = round2(
     categoryImpacts.reduce((s, r) => s + (r.foreignTaxCredit ?? 0), 0)
@@ -654,8 +666,8 @@ export function buildToBeImpact(input: {
     currency: "BRL",
     applyReliefs,
     reliefsNote: applyReliefs
-      ? "Pro: BR-IRPF-EXT-001 + BR-CRED-EXT-001 populate Brazilian tax, foreign tax credit, and net payable. Gross annual-table tax is retained as a separate field."
-      : "Gross mode (Basic): annual-table tax with no exemptions. Brazilian tax, FTC, and net payable are still computed via BR-IRPF-EXT-001 for explainability.",
+      ? "Pro: BR-IRPF-EXT-001 + BR-CRED-EXT-001 populate Brazilian tax, foreign tax credit, and net payable. Gross tax is the annual table on the aggregated BRL-converted base by regime."
+      : "Gross mode (Basic): annual-table tax on the aggregated BRL-converted base (IRPF / GCAP / Lei 14.754), no exemptions. Brazilian tax, FTC, and net payable are still computed via BR-IRPF-EXT-001 for explainability.",
     legalRulePackId: LEGAL_RULE_PACK_ID,
     requiresReview:
       residency.requiresReview ||

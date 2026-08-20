@@ -56,19 +56,19 @@ export function convertToBrlCamBio001(input: {
     };
   }
 
-  // Proxy: monthly table keyed by receipt month — NOT the statutory prior-fortnight rule.
+  // Documented proxy: monthly average keyed by the statutory prior month (IN SRF 208/2002).
   const ptax = lookupPtaxToBrl(moeda, input.dataDisponibilidade);
   notes.push(
-    "Using monthly PTAX proxy; statutory rule uses last business day of first fortnight of PRIOR month — requiresReview."
+    "Using documented prior-month PTAX monthly-average proxy (IN SRF 208/2002 fortnight rule approximated) — requiresReview until a live BACEN feed is wired."
   );
   if (ptax === undefined) {
     return {
       regraId: "BR-CAMBIO-001",
-      valorBrl: input.valor,
-      taxaAplicada: 1,
+      valorBrl: 0,
+      taxaAplicada: 0,
       metodo: "ptax_monthly_proxy",
       requiresReview: true,
-      notes: [...notes, `No PTAX for ${moeda} on ${input.dataDisponibilidade}`]
+      notes: [...notes, `No PTAX for ${moeda} on ${input.dataDisponibilidade}; amount excluded from the tax base`]
     };
   }
 

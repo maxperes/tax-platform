@@ -1,11 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { lookupPtaxToBrl, lookupPtaxToUsd, monthKeyFromDate } from "./ptax.js";
+import {
+  lookupPtaxToBrl,
+  lookupPtaxToUsd,
+  monthKeyFromDate,
+  statutoryPtaxMonthKey,
+  PTAX_PROXY_META
+} from "./ptax.js";
 import { resolveBrlFromIncome, resolveUsdFromIncome } from "./fx.js";
 
 describe("PTAX lookup", () => {
-  it("returns monthly USD/BRL rate by payment date", () => {
+  it("documents the BACEN proxy (not a live feed)", () => {
+    expect(PTAX_PROXY_META.liveFeed).toBe(false);
+    expect(PTAX_PROXY_META.source).toMatch(/bcb\.gov\.br/);
+  });
+
+  it("uses the statutory prior-month key", () => {
     expect(monthKeyFromDate("2026-03-15")).toBe("2026-03");
-    expect(lookupPtaxToBrl("USD", "2026-03-15")).toBe(5.35);
+    expect(statutoryPtaxMonthKey("2026-03-15")).toBe("2026-02");
+    expect(statutoryPtaxMonthKey("2026-01-10")).toBe("2025-12");
+    expect(lookupPtaxToBrl("USD", "2026-03-15")).toBe(5.38);
     expect(lookupPtaxToBrl("BRL", "2026-03-15")).toBe(1);
   });
 
@@ -22,14 +35,14 @@ describe("PTAX lookup", () => {
       originalCurrency: "USD",
       paymentDate: "2026-03-15"
     });
-    expect(fx.amountBrl).toBeCloseTo(5350, 2);
+    expect(fx.amountBrl).toBeCloseTo(5380, 2);
     expect(fx.requiresAdditionalReview).toBe(false);
     expect(fx.notes).toMatch(/PTAX/);
   });
 
   it("auto-fills USD from BRL income via PTAX", () => {
     const fx = resolveUsdFromIncome({
-      grossAmount: 5350,
+      grossAmount: 5380,
       originalCurrency: "BRL",
       paymentDate: "2026-03-15"
     });

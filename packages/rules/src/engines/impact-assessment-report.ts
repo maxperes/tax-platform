@@ -44,6 +44,7 @@ export function buildImpactAssessmentReport(input: {
   });
   const opportunities = buildPlanningResult({
     inventory: currentStatus.inventory,
+    persons: currentStatus.persons,
     toBe: brazilImpact,
     plan: input.plan
   });

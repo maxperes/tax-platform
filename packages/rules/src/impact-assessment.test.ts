@@ -92,6 +92,94 @@ describe("Impact Assessment engines", () => {
     expect(pro.scenarios.length).toBeGreaterThan(0);
   });
 
+  it("computes gross tax on the aggregated BRL-converted base, not per line", () => {
+    const shared = {
+      residency: {
+        currentlyFiscalResidentBrazil: true,
+        firstEntryBrazilDate: "2020-01-01"
+      },
+      countryFootprint: [{ country: "BR", hasTaxResidency: true }],
+      assets: [],
+      entities: [],
+      trusts: [],
+      financialAccountsSummary: []
+    };
+    const split = buildToBeImpact({
+      inventory: {
+        ...shared,
+        incomes: [
+          {
+            category: "salary",
+            originCountry: "US",
+            currency: "BRL",
+            annualAmount: 20_000,
+            brazilianTaxTreatment: "salary_progressive"
+          },
+          {
+            category: "salary",
+            originCountry: "US",
+            currency: "BRL",
+            annualAmount: 20_000,
+            brazilianTaxTreatment: "salary_progressive"
+          }
+        ]
+      },
+      hypothesisResidencyDate: "2026-01-01"
+    });
+    const combined = buildToBeImpact({
+      inventory: {
+        ...shared,
+        incomes: [
+          {
+            category: "salary",
+            originCountry: "US",
+            currency: "BRL",
+            annualAmount: 40_000,
+            brazilianTaxTreatment: "salary_progressive"
+          }
+        ]
+      },
+      hypothesisResidencyDate: "2026-01-01"
+    });
+    expect(split.estimatedBrGrossTaxTotal).toBeCloseTo(combined.estimatedBrGrossTaxTotal, 2);
+    expect(split.estimatedBrGrossTaxTotal).toBeGreaterThan(0);
+  });
+
+  it("re-runs To Be so January tax exceeds July for recurring salary", () => {
+    const inv = {
+      residency: {
+        currentlyFiscalResidentBrazil: false,
+        entryPathway: "permanent_visa" as const
+      },
+      countryFootprint: [{ country: "US", hasTaxResidency: true }],
+      incomes: [
+        {
+          category: "salary",
+          originCountry: "US",
+          currency: "BRL",
+          annualAmount: 120_000,
+          periodicity: "monthly" as const,
+          brazilianTaxTreatment: "salary_progressive" as const
+        }
+      ],
+      assets: [],
+      entities: [],
+      trusts: [],
+      financialAccountsSummary: []
+    };
+    const toBe = buildToBeImpact({
+      inventory: inv,
+      hypothesisResidencyDate: "2026-03-15"
+    });
+    const pro = buildPlanningResult({ inventory: inv, toBe, plan: "pro" });
+    const jan = pro.scenarios.find((s) => s.id === "move-january");
+    const jul = pro.scenarios.find((s) => s.id === "move-july");
+    const defer = pro.scenarios.find((s) => s.id === "defer-next-year");
+    expect(jan?.estimatedBrTaxDelta).toBeGreaterThan(jul?.estimatedBrTaxDelta ?? 0);
+    expect(jul?.notes.join(" ")).toMatch(/Re-ran To Be/);
+    expect(defer?.estimatedBrTaxDelta).toBe(0);
+  });
+
   it("builds four-section impact report", () => {
     const report = buildImpactAssessmentReport({
       inventory: buildAsIsSnapshot({ inventory }).inventory,

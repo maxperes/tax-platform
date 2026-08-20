@@ -5,6 +5,20 @@ export type ProgressiveRow = {
   deduction: number;
 };
 
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/** Annual IRPF bands from a monthly table (RFB annual = monthly × 12). */
+export function annualizeMonthlyProgressiveTable(monthly: ProgressiveRow[]): ProgressiveRow[] {
+  return monthly.map((row) => ({
+    upperBound:
+      row.upperBound === Number.POSITIVE_INFINITY ? Number.POSITIVE_INFINITY : round2(row.upperBound * 12),
+    rate: row.rate,
+    deduction: round2(row.deduction * 12)
+  }));
+}
+
 export function taxFromProgressiveTable(base: number, rows: ProgressiveRow[]): number {
   if (base <= 0) return 0;
   for (const row of rows) {

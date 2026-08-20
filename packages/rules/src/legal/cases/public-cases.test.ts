@@ -61,7 +61,7 @@ describe("public-case golden replay", () => {
       }
       if (expected.grossTaxBaseBrl !== undefined) {
         const expectedGross = taxFromProgressiveTable(expected.grossTaxBaseBrl, BR_IRPF_ANNUAL_2026);
-        expect(brazilImpact.estimatedBrGrossTaxTotal).toBeCloseTo(expectedGross, 4);
+        expect(brazilImpact.estimatedBrGrossTaxTotal).toBeCloseTo(Math.round(expectedGross * 100) / 100, 2);
       }
     });
   }
