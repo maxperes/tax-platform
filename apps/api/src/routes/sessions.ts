@@ -34,13 +34,13 @@ sessionsRouter.post("/", asyncHandler(async (req, res) => {
   const existingProfile = await prisma.fiscalResidenceProfile.findUnique({
     where: { userId_taxYear: { userId, taxYear: body.taxYear } }
   });
-  let contextJson: Record<string, unknown> = { _triagePending: true };
+  let contextJson: Record<string, unknown> = { intakeGoal: "impact_map" };
   let firstMessage = initialAssistantMessage(body.taxYear);
   if (existingProfile?.data) {
     const parsed = fiscalResidenceSchema.safeParse(existingProfile.data);
     if (parsed.success) {
       // Confirm first — do not leave triage pending while asking yes/no.
-      contextJson = { _fiscalProfileConfirmPending: true };
+      contextJson = { _fiscalProfileConfirmPending: true, intakeGoal: "impact_map" };
       firstMessage = buildAssistantMessageForExistingFiscalProfile({
         taxYear: body.taxYear,
         data: parsed.data,

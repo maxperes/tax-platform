@@ -95,6 +95,16 @@ vi.mock("../../config.js", () => ({
   }
 }));
 
+vi.mock("../session-twin-sync.js", () => ({
+  syncSessionToTwin: vi.fn(async () => ({
+    twinId: "twin-test",
+    taxYear: 2026,
+    answerCount: 4,
+    projectedKeys: [],
+    assessmentComplete: true
+  }))
+}));
+
 vi.mock("../jobs/queue.js", () => ({
   JOB_NAMES: {
     buildReport: "build-report",
@@ -377,6 +387,21 @@ describe("handleUserMessage orchestrator pipeline", () => {
     const result = await handleUserMessage("sess-1", "that's all");
     expect(result.sessionState).toBe("income_capture");
     expect(result.assistantText).toMatch(/asset/i);
+  });
+
+  it("events confirm with impact_map saves the tax map", async () => {
+    seedSession({
+      state: "events",
+      contextJson: { intakeGoal: "impact_map" }
+    });
+    prismaMock.fiscalResidenceProfile.findUnique.mockResolvedValue({
+      derivedProfile: "resident_brazil",
+      requiresAdditionalReview: false
+    });
+
+    const result = await handleUserMessage("sess-1", "yes looks correct");
+    expect(result.sessionState).toBe("complete");
+    expect(result.assistantText).toMatch(/360° tax map/i);
   });
 
   it("events confirm with foreign_salary skips to deductions", async () => {

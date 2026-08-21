@@ -47,8 +47,10 @@ export function AssessmentShell({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <Header signedIn />
-      <div className="border-b border-surface-border bg-white">
+      <div className="print:hidden">
+        <Header signedIn />
+      </div>
+      <div className="border-b border-surface-border bg-white print:hidden">
         <div className="mx-auto flex max-w-content items-center justify-between gap-4 px-5 lg:px-8">
           <nav aria-label="Assessment sections">
             <ul className="-mb-px flex gap-1 overflow-x-auto">
@@ -89,7 +91,9 @@ export function AssessmentShell({
       <main id="main" className="flex-1">
         {children}
       </main>
-      <Footer />
+      <div className="print:hidden">
+        <Footer />
+      </div>
     </div>
   );
 }

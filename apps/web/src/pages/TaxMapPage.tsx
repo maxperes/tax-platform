@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, FileWarning, Gauge, Globe2, Landmark, Wallet } from "lucide-react";
@@ -14,6 +15,7 @@ import { ResidencyTimeline } from "../components/dashboard/ResidencyTimeline";
 import { CountryCard } from "../components/dashboard/CountryCard";
 import { FindingRow } from "../components/dashboard/FindingRow";
 import { AnalysisAreaCard } from "../components/dashboard/AnalysisAreaCard";
+import { ScenarioCompareTable } from "../components/assessment/ScenarioCompareTable";
 import { parseInterviewRecord } from "../lib/interview/interview-to-twin";
 import { asString } from "../lib/interview/derive";
 import {
@@ -32,6 +34,10 @@ import {
 } from "../lib/interview/derive";
 import { formatMoney } from "../lib/chat-utils";
 import { openOrCreateCopilotSession } from "../lib/copilot";
+import {
+  baselineHeadlineTax,
+  hypothesisDateFromIso
+} from "../lib/impact-assessment-view";
 
 type TwinCase = {
   id: string;
@@ -42,6 +48,7 @@ type TwinCase = {
 
 type AssessmentRow = {
   id: string;
+  hypothesisResidencyDate?: string;
   toBeJson?: {
     estimatedBrGrossTaxTotal?: number;
     brazilianTaxTotal?: number;
@@ -61,8 +68,19 @@ type AssessmentRow = {
       netPayable?: number;
       requiredFilings?: string[];
     };
-    obligations?: { code: string; label: string; required: boolean; reason?: string }[];
+    obligations?: { code: string; label: string; required: boolean; reason?: string; probe?: boolean }[];
     risks?: { code: string; label: string; level: string; rationale: string }[];
+  };
+  planningJson?: {
+    proUnlocked?: boolean;
+    scenarios?: {
+      id: string;
+      label: string;
+      description: string;
+      estimatedBrTaxDelta: number;
+      notes?: string[];
+      proOnly?: boolean;
+    }[];
   };
 };
 
@@ -71,6 +89,7 @@ export function TaxMapPage() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const taxYear = new Date().getFullYear();
+  const [dateOverride, setDateOverride] = useState<string | null>(null);
 
   const twinQuery = useQuery({
     queryKey: ["twin", twinId],
@@ -92,8 +111,6 @@ export function TaxMapPage() {
   const signals = residencySignals(record);
   const timeline = residencyTimeline(record);
   const entry = asString(record, "first_entry_date");
-  const hypothesisDate =
-    entry && entry !== "not_sure" ? entry : `${taxYear}-07-01`;
 
   const assessmentsQuery = useQuery({
     queryKey: ["assessments", twin?.taxYear],
@@ -106,14 +123,25 @@ export function TaxMapPage() {
     queryFn: () => api<AssessmentRow>(`/api/impact-assessments/${latestId}`),
     enabled: Boolean(latestId)
   });
-  const toBe = assessmentQuery.data?.toBeJson;
+  const assessment = assessmentQuery.data;
+  const toBe = assessment?.toBeJson;
+  const planning = assessment?.planningJson;
+  const defaultHypothesis = useMemo(() => {
+    const fromAssessment = hypothesisDateFromIso(assessment?.hypothesisResidencyDate);
+    if (fromAssessment) return fromAssessment;
+    if (entry && entry !== "not_sure") return entry;
+    return `${taxYear}-07-01`;
+  }, [assessment?.hypothesisResidencyDate, entry, taxYear]);
+  const hypothesisDate = dateOverride ?? defaultHypothesis;
   const engineFindings: Finding[] =
     toBe?.obligations
       ?.filter((item) => item.required && item.code !== "NO_FILING")
       .map((item) => ({
         label: item.label,
-        status: "professional_review_recommended",
-        note: item.reason ?? "Indicated by the rules engine."
+        status: "professional_review_recommended" as const,
+        note: item.probe
+          ? `${item.reason ?? "Indicated by the rules engine."} Simplified threshold probe — not an official filing determination.`
+          : (item.reason ?? "Indicated by the rules engine.")
       })) ?? [];
   const riskFindings: Finding[] =
     toBe?.risks?.map((risk) => ({
@@ -183,20 +211,41 @@ export function TaxMapPage() {
               concluded here. Amounts appear after the rules engine runs the report.
             </p>
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="grid gap-1 text-sm text-navy">
+              <span className="text-xs font-medium text-navy-700/75">Hypothesis residency date (D)</span>
+              <input
+                type="date"
+                className="field-input min-w-[11rem]"
+                value={hypothesisDate}
+                onChange={(event) => setDateOverride(event.target.value)}
+                disabled={!hasAnswers}
+              />
+            </label>
             <PrimaryButton
-              onClick={() => {
-                if (twin.impactAssessments?.[0]) nav(`/impact/${twinId}/report`);
-                else runMutation.mutate();
-              }}
+              onClick={() => runMutation.mutate()}
               disabled={runMutation.isPending || !hasAnswers}
             >
-              {runMutation.isPending ? "Running…" : "View preliminary report"}
+              {runMutation.isPending
+                ? "Running…"
+                : assessment
+                  ? "Re-run and view report"
+                  : "View preliminary report"}
             </PrimaryButton>
+            {assessment && (
+              <SecondaryButton href={`/impact/${twinId}/report`}>Open last report</SecondaryButton>
+            )}
             <SecondaryButton href={`/impact/${twinId}`}>Edit interview</SecondaryButton>
             <SecondaryButton href={`/impact/${twinId}/documents`}>Review documents</SecondaryButton>
           </div>
         </header>
+
+        {hasAnswers && (
+          <p className="mt-3 text-xs text-navy-700/65">
+            The engine simulates Brazilian tax residency from date D. Changing D and re-running
+            replaces the last preliminary map for this year.
+          </p>
+        )}
 
         {!hasAnswers && (
           <div className="mt-6 space-y-3">
@@ -295,6 +344,22 @@ export function TaxMapPage() {
             </>
           )}
         </div>
+
+        {planning?.scenarios && planning.scenarios.length > 0 && (
+          <div className="mt-8">
+            <DashboardPanel
+              title="Move-date scenarios"
+              description="Each row re-runs the To Be engine. Origin-country tax on a sale is not modeled."
+            >
+              <ScenarioCompareTable
+                scenarios={planning.scenarios}
+                baselineTax={baselineHeadlineTax(toBe)}
+                currency={toBe?.currency ?? "BRL"}
+                proUnlocked={planning.proUnlocked}
+              />
+            </DashboardPanel>
+          </div>
+        )}
 
         <div className="mt-8 grid gap-6 lg:grid-cols-2">
           <DashboardPanel

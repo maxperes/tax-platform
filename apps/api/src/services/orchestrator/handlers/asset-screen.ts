@@ -1,9 +1,36 @@
 import type { Prisma } from "../../../prisma-client.js";
 import { prisma } from "../../../db.js";
 import { eventsCheckpointMessage } from "../../intake-helpers.js";
+import { normalizeCountryCode } from "../../fiscal-intake.js";
+import { isoToInterviewCountry } from "@tax-platform/shared";
 import type { HandlerContext, HandlerResult } from "../session-context.js";
 
 export const ASSET_SCREEN_PENDING_KEY = "_assetScreenPending";
+export const ASSET_COUNTRY_QUEUE_KEY = "_assetCountryQueue";
+
+function assetLabel(id: string): string {
+  return ASSET_SCREEN_OPTIONS.find((o) => o.id === id)?.label ?? id.replace(/_/g, " ");
+}
+
+export function assetCountryPrompt(typeId: string): string {
+  return (
+    `Which country are your **${assetLabel(typeId)}** in?\n\n` +
+    "Reply with a country name or ISO code (e.g. **United States** or **US**), or **not sure**."
+  );
+}
+
+function parseAssetCountryAnswer(text: string): string | undefined {
+  const t = text.trim();
+  if (!t) return undefined;
+  if (/^(not[_\s-]?sure|unsure|unknown|idk|n\/a|skip)$/i.test(t)) return "other";
+  const iso = normalizeCountryCode(t);
+  if (!iso || iso.length < 2) return undefined;
+  return isoToInterviewCountry(iso);
+}
+
+export function isAssetCountryPending(context: Record<string, unknown>): boolean {
+  return Array.isArray(context[ASSET_COUNTRY_QUEUE_KEY]) && (context[ASSET_COUNTRY_QUEUE_KEY] as unknown[]).length > 0;
+}
 
 const ASSET_SCREEN_OPTIONS: { id: string; label: string }[] = [
   { id: "bank_accounts", label: "Bank accounts" },
@@ -102,6 +129,20 @@ export async function handleAssetScreen(h: HandlerContext): Promise<HandlerResul
 
   const newCtx: Record<string, unknown> = { ...h.ctx, assetTypes: types };
   delete newCtx[ASSET_SCREEN_PENDING_KEY];
+  if (types.length > 0) {
+    newCtx[ASSET_COUNTRY_QUEUE_KEY] = [...types];
+    newCtx.assetCountries = {
+      ...((h.ctx.assetCountries as Record<string, string> | undefined) ?? {})
+    };
+    await prisma.conversationSession.update({
+      where: { id: h.sessionId },
+      data: { contextJson: newCtx as Prisma.InputJsonValue }
+    });
+    const mapHint = `Recorded **${types.length}** asset categor${types.length === 1 ? "y" : "ies"}.`;
+    return {
+      assistantText: `${mapHint}\n\n${assetCountryPrompt(types[0]!)}`
+    };
+  }
   await prisma.conversationSession.update({
     where: { id: h.sessionId },
     data: {
@@ -110,13 +151,47 @@ export async function handleAssetScreen(h: HandlerContext): Promise<HandlerResul
     }
   });
 
-  const mapHint =
-    types.length > 0
-      ? `Recorded **${types.length}** asset categor${types.length === 1 ? "y" : "ies"}. `
-      : "No asset categories recorded. ";
   return {
     assistantText:
-      `${mapHint}\n\n` +
+      `No asset categories recorded.\n\n` +
       (await eventsCheckpointMessage(h.session.userId, h.session.taxYear))
+  };
+}
+
+export async function handleAssetCountry(h: HandlerContext): Promise<HandlerResult> {
+  if (!isAssetCountryPending(h.ctx)) return null;
+  const queue = [...(h.ctx[ASSET_COUNTRY_QUEUE_KEY] as string[])];
+  const current = queue[0];
+  if (!current) return null;
+  const country = parseAssetCountryAnswer(h.userContent);
+  if (!country) {
+    return { assistantText: `Please name a country, or say **not sure**.\n\n${assetCountryPrompt(current)}` };
+  }
+
+  const remaining = queue.slice(1);
+  const countries = {
+    ...((h.ctx.assetCountries as Record<string, string> | undefined) ?? {}),
+    [current]: country
+  };
+  const newCtx: Record<string, unknown> = { ...h.ctx, assetCountries: countries };
+  if (remaining.length > 0) {
+    newCtx[ASSET_COUNTRY_QUEUE_KEY] = remaining;
+    await prisma.conversationSession.update({
+      where: { id: h.sessionId },
+      data: { contextJson: newCtx as Prisma.InputJsonValue }
+    });
+    return { assistantText: assetCountryPrompt(remaining[0]!) };
+  }
+
+  delete newCtx[ASSET_COUNTRY_QUEUE_KEY];
+  await prisma.conversationSession.update({
+    where: { id: h.sessionId },
+    data: {
+      state: "events",
+      contextJson: newCtx as Prisma.InputJsonValue
+    }
+  });
+  return {
+    assistantText: await eventsCheckpointMessage(h.session.userId, h.session.taxYear)
   };
 }

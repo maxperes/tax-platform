@@ -77,6 +77,11 @@ describe("Impact Assessment engines", () => {
     expect(toBe.obligations.some((o) => o.code === "DARF")).toBe(true);
     expect(toBe.obligations.some((o) => o.code === "EXIT_DECLARATION")).toBe(true);
     expect(toBe.obligations.some((o) => o.code === "NO_FILING")).toBe(true);
+    expect(toBe.monthlyCarneLeao.length).toBeGreaterThan(0);
+    expect(toBe.monthlyCarneLeao[0]?.dueDate).toBeTruthy();
+    expect(toBe.crossBorderComparison.applicable).toBe(true);
+    expect(toBe.crossBorderComparison.usFederal?.netTaxDueUsd).toBeGreaterThan(0);
+    expect(toBe.declarations.some((d) => d.code === "COMPANIES" && d.required)).toBe(true);
   });
 
   it("gates planning scenarios for basic vs pro", () => {
@@ -190,6 +195,8 @@ describe("Impact Assessment engines", () => {
     expect(report.sections).toHaveLength(4);
     expect(report.title).toMatch(/Impact Assessment/i);
     expect(report.legalRulePackId).toBeTruthy();
+    expect(report.layers.brazilImpact.monthlyCarneLeao).toBeDefined();
+    expect(report.layers.opportunities.scenarios.length).toBeGreaterThan(0);
   });
 
   it("exposes legal rules and monitor scaffold", () => {

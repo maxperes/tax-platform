@@ -13,6 +13,7 @@ type Props = {
   progressTotal: number;
   jumpDisabled: boolean;
   onJump: (state: string) => void;
+  steps?: readonly { id: string; label: string }[];
   notices: SessionNotice[];
   noticeCenterOpen: boolean;
   readNoticeIds: Set<string>;
@@ -40,6 +41,7 @@ export function ChatSessionHeader({
   progressTotal,
   jumpDisabled,
   onJump,
+  steps,
   notices,
   noticeCenterOpen,
   readNoticeIds,
@@ -94,6 +96,7 @@ export function ChatSessionHeader({
             progressTotal={progressTotal}
             disabled={jumpDisabled}
             onJump={onJump}
+            steps={steps}
           />
           {showMapCta && (
             <button type="button" disabled={syncingMap} onClick={onOpenMap} className={`${mapButtonClass} hidden sm:inline-flex`}>

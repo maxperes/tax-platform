@@ -17,7 +17,7 @@ import {
   loadNoticeReadIds,
   saveNoticeReadIds
 } from "../lib/chat-notices";
-import { WHY_HINT_BY_STATE, formatCalcStatus, stepLabelForState, stepProgress } from "../lib/chat-constants";
+import { WHY_HINT_BY_STATE, FILING_STEP_ORDER, STEP_ORDER, formatCalcStatus, stepLabelForState, stepProgress } from "../lib/chat-constants";
 import { formatMoney } from "../lib/chat-utils";
 import { api, downloadAuthenticated, getToken, signOut, streamSessionMessage } from "../api";
 import { fetchTaxReport, taxReportQueryKey } from "../lib/tax-report";
@@ -29,6 +29,7 @@ type Session = {
   taxYear: number;
   state: string;
   requiresAdditionalReview: boolean;
+  contextJson?: Record<string, unknown> | null;
   messages: Message[];
 };
 
@@ -679,7 +680,8 @@ export function ChatPage() {
   }
 
   const displayedMessages = [...session.messages, ...optimisticMessages];
-  const progress = stepProgress(session.state);
+  const filingPath = session.contextJson?.intakeGoal !== "impact_map";
+  const progress = stepProgress(session.state, filingPath);
   const whyHint = WHY_HINT_BY_STATE[session.state] ?? "We will keep this short and one question at a time.";
   const sessionNotices = [
     ...activeSessionNotices(session),
@@ -694,12 +696,17 @@ export function ChatPage() {
         ]
       : [])
   ];
-  const showTriageChips = session.state === "fiscal_residence" && session.messages.length <= 1;
+  const showTriageChips =
+    session.state === "fiscal_residence" &&
+    session.contextJson?._triagePending === true &&
+    session.messages.length <= 2;
   const busy = sending || resetting || navigatingStep || syncingMap;
   const workspaceTitle =
     session.state === "complete" || session.state === "report"
-      ? "Report"
-      : stepLabelForState(session.state);
+      ? filingPath
+        ? "Report"
+        : "Tax map"
+      : stepLabelForState(session.state, filingPath);
 
   const resultsBlock = (
     <>
@@ -810,12 +817,13 @@ export function ChatPage() {
       <div className="mx-auto flex min-h-0 w-full max-w-[90rem] flex-1 flex-col bg-white 2xl:max-w-[96rem]">
         <ChatSessionHeader
           taxYear={session.taxYear}
-          stepLabel={stepLabelForState(session.state)}
+          stepLabel={stepLabelForState(session.state, filingPath)}
           currentState={session.state}
           progressIndex={progress.index}
           progressTotal={progress.total}
           jumpDisabled={busy}
           onJump={(s) => void jumpToStep(s)}
+          steps={filingPath ? FILING_STEP_ORDER : STEP_ORDER}
           notices={sessionNotices}
           noticeCenterOpen={noticeCenterOpen}
           readNoticeIds={readNoticeIds}

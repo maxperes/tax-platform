@@ -14,6 +14,7 @@ function clearPendingFlagsForRewind(
 ): Record<string, unknown> {
   const next = { ...context };
   delete next[ASSET_SCREEN_PENDING_KEY];
+  delete next._assetCountryQueue;
   delete next._fiscalProfileConfirmPending;
   if (rewindTarget === "fiscal_residence") {
     delete next._triagePending;

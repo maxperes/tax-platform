@@ -10,9 +10,9 @@ import {
 import { prisma } from "../db.js";
 import { syncTaxableEvents, recomputeMonthlyTax } from "./tax-pipeline.js";
 
-export type IntakeGoal = "foreign_salary" | "investments" | "asset_sale" | "full_annual";
+export type IntakeGoal = "impact_map" | "foreign_salary" | "investments" | "asset_sale" | "full_annual";
 
-export const INTAKE_GOAL_OPTIONS: { id: IntakeGoal; label: string }[] = [
+export const INTAKE_GOAL_OPTIONS: { id: Exclude<IntakeGoal, "impact_map">; label: string }[] = [
   { id: "foreign_salary", label: "Foreign salary or freelance paid abroad" },
   { id: "investments", label: "Dividends, interest, or investment income" },
   { id: "asset_sale", label: "Asset sale or capital gain" },
@@ -126,6 +126,12 @@ export async function loadIntakeModulePlan(
 }
 
 export function describeModulePlanForUser(plan: IntakeModulePlan): string {
+  if (plan.intakeGoal === "impact_map") {
+    return [
+      "**What applies to your profile:**",
+      "- We collect the same facts as the structured interview, then open the **360° tax map**."
+    ].join("\n");
+  }
   const lines: string[] = [
     "**What applies to your profile:**",
     "- After residency and income (and a short asset screen), you can open the **360° tax map** — the same view as the interview."
@@ -152,6 +158,10 @@ export function describeModulePlanForUser(plan: IntakeModulePlan): string {
   return lines.join("\n");
 }
 
+export function isImpactMapIntake(context?: Record<string, unknown>): boolean {
+  return context?.intakeGoal === "impact_map";
+}
+
 export function triagePromptText(): string {
   return (
     "Every path builds the same **360° tax map**. What should we focus on first this year?\n\n" +
@@ -174,6 +184,7 @@ export function parseIntakeGoal(text: string): IntakeGoal | undefined {
   if (/\b(dividend|interest|investment|stock)\b/i.test(text)) return "investments";
   if (/\b(sale|capital\s+gain|disposition|asset)\b/i.test(text)) return "asset_sale";
   if (/\b(full|annual|everything|complete)\b/i.test(text)) return "full_annual";
+  if (/\b(360|tax map|impact map)\b/i.test(text)) return "impact_map";
   return undefined;
 }
 
@@ -517,7 +528,12 @@ function shouldSkipCapitalGainStep(plan: IntakeModulePlan): boolean {
   return plan.intakeGoal === "foreign_salary" || plan.intakeGoal === "investments";
 }
 
+function shouldSkipFilingModules(plan: IntakeModulePlan): boolean {
+  return plan.intakeGoal === "impact_map";
+}
+
 export function nextStateAfterEvents(plan: IntakeModulePlan): ConversationState {
+  if (shouldSkipFilingModules(plan)) return "report";
   if (shouldSkipCapitalGainStep(plan)) return "deductions";
   return "capital_gain";
 }
@@ -557,6 +573,19 @@ export function applyProfileAwareAdvance(
   next: ConversationState,
   plan: IntakeModulePlan
 ): ConversationState {
+  if (shouldSkipFilingModules(plan)) {
+    if (
+      next === "capital_gain" ||
+      next === "patrimony" ||
+      next === "transfers" ||
+      next === "trust_registry" ||
+      next === "entity_simulation" ||
+      next === "deductions" ||
+      next === "monthly_calc"
+    ) {
+      return "report";
+    }
+  }
   if (next === "monthly_calc" && plan.skipMonthly) return "report";
   if (current === "events" && next === "capital_gain" && shouldSkipCapitalGainStep(plan)) {
     return "deductions";

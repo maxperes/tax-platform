@@ -1,14 +1,24 @@
 import { STEP_ORDER } from "../../lib/chat-constants";
 
+type StepItem = { id: string; label: string };
+
 type Props = {
   currentState: string;
   progressIndex: number;
   progressTotal: number;
   disabled: boolean;
   onJump: (state: string) => void;
+  steps?: readonly StepItem[];
 };
 
-export function StepPills({ currentState, progressIndex, progressTotal, disabled, onJump }: Props) {
+export function StepPills({
+  currentState,
+  progressIndex,
+  progressTotal,
+  disabled,
+  onJump,
+  steps = STEP_ORDER
+}: Props) {
   const pct = Math.round((progressIndex / progressTotal) * 100);
 
   return (
@@ -33,7 +43,7 @@ export function StepPills({ currentState, progressIndex, progressTotal, disabled
         onChange={(e) => onJump(e.target.value)}
         className="field-input w-[9.5rem] shrink-0 py-1.5 text-xs sm:w-44"
       >
-        {STEP_ORDER.map((step, idx) => (
+        {(steps as readonly StepItem[]).map((step, idx) => (
           <option key={step.id} value={step.id}>
             {idx + 1}. {step.label}
           </option>

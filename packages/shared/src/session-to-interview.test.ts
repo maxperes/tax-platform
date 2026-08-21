@@ -167,6 +167,17 @@ describe("mergeInterviewRecords", () => {
     expect(merged.answers.full_name).toBe("From interview");
     expect(merged.meta?.source).toBe("merged");
   });
+
+  it("maps copilot asset countries onto interview keys", () => {
+    const record = sessionFactsToInterviewRecord({
+      fiscal: baseFiscal,
+      assetTypeHints: ["brokerage", "real_estate"],
+      assetCountries: { brokerage: "US", real_estate: "pt" }
+    });
+    expect(record.answers.asset_types).toEqual(expect.arrayContaining(["brokerage", "real_estate"]));
+    expect(record.answers.asset_brokerage_country).toBe("us");
+    expect(record.answers.asset_real_estate_country).toBe("pt");
+  });
 });
 
 describe("interviewToTwin", () => {

@@ -71,6 +71,14 @@ export async function syncSessionToTwin(
   const assetTypeHints = Array.isArray(sessionCtx.assetTypes)
     ? sessionCtx.assetTypes.filter((value): value is string => typeof value === "string")
     : [];
+  const assetCountries =
+    sessionCtx.assetCountries && typeof sessionCtx.assetCountries === "object" && !Array.isArray(sessionCtx.assetCountries)
+      ? Object.fromEntries(
+          Object.entries(sessionCtx.assetCountries as Record<string, unknown>).filter(
+            (entry): entry is [string, string] => typeof entry[1] === "string"
+          )
+        )
+      : undefined;
 
   const projected = sessionFactsToInterviewRecord({
     fiscal,
@@ -104,7 +112,8 @@ export async function syncSessionToTwin(
     trusts: trusts.map((row) => ({
       name: row.name,
       jurisdiction: row.jurisdiction
-    }))
+    })),
+    assetCountries
   });
 
   if (Object.keys(projected.answers).length === 0) {

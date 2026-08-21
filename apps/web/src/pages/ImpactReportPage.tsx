@@ -28,6 +28,10 @@ import { NOT_SURE } from "../lib/interview/types";
 import { formatMoney } from "../lib/chat-utils";
 import { openOrCreateCopilotSession } from "../lib/copilot";
 import { interviewToTwin } from "../lib/interview/interview-to-twin";
+import { baselineHeadlineTax, hypothesisDateFromIso, obligationBadge } from "../lib/impact-assessment-view";
+import { ScenarioCompareTable } from "../components/assessment/ScenarioCompareTable";
+import { CrossBorderTable } from "../components/assessment/CrossBorderTable";
+import { MonthlyCarneLeaoTable } from "../components/assessment/MonthlyCarneLeaoTable";
 
 type TwinCase = {
   id: string;
@@ -119,12 +123,45 @@ type AssessmentRow = {
     risks?: { code: string; label: string; level: string; rationale: string }[];
     reliabilityMatrix?: { conclusion: string; sourcesSummary: string; certaintyTier: string }[];
     reliefsNote?: string;
+    monthlyCarneLeao?: {
+      taxMonth: string;
+      taxableBaseBrl?: number;
+      taxComputedBrl?: number;
+      creditAppliedBrl?: number;
+      netDueBrl?: number;
+      dueDate?: string;
+      probe?: boolean;
+    }[];
+    crossBorderComparison?: {
+      applicable?: boolean;
+      usFederal?: {
+        grossIncomeUsd?: number;
+        netTaxDueUsd?: number;
+        taxCreditAppliedUsd?: number;
+        filingStatusAssumed?: string;
+        note?: string;
+      };
+      brazil?: {
+        taxBrl?: number;
+        ftcBrl?: number;
+        netPayableBrl?: number;
+      };
+      notes?: string;
+    };
   };
   planningJson?: {
     estimatedSavingsTeaser?: string;
     actionPlan?: { title: string; description: string }[];
     opportunities?: { title: string; description: string; proOnly?: boolean }[];
     proUnlocked?: boolean;
+    scenarios?: {
+      id: string;
+      label: string;
+      description: string;
+      estimatedBrTaxDelta: number;
+      notes?: string[];
+      proOnly?: boolean;
+    }[];
   };
 };
 
@@ -236,14 +273,18 @@ export function ImpactReportPage() {
             </h1>
             <p className="mt-2 text-sm text-navy-700/70">
               Tax year {twin.taxYear}
+              {assessment?.hypothesisResidencyDate
+                ? ` · Hypothesis D ${hypothesisDateFromIso(assessment.hypothesisResidencyDate) ?? assessment.hypothesisResidencyDate}`
+                : ""}
               {assessment?.ruleVersion ? ` · Rules ${assessment.ruleVersion}` : ""}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 print:hidden">
             {assessment?.requiresAdditionalReview && (
               <StatusBadge tone="warning">Expert review requested</StatusBadge>
             )}
             <StatusBadge tone="info">Preliminary</StatusBadge>
+            <SecondaryButton onClick={() => window.print()}>Print report</SecondaryButton>
           </div>
         </header>
 
@@ -339,6 +380,19 @@ export function ImpactReportPage() {
               )
             )}
           </Section>
+
+          {toBe?.crossBorderComparison &&
+            (toBe.crossBorderComparison.usFederal || toBe.crossBorderComparison.brazil) && (
+              <Section title="US vs Brazil (same year)" eyebrow="Orientation">
+                <CrossBorderTable comparison={toBe.crossBorderComparison} />
+              </Section>
+            )}
+
+          {toBe?.monthlyCarneLeao && toBe.monthlyCarneLeao.length > 0 && (
+            <Section title="Monthly carnê-leão / DARF sketch" eyebrow="Cash timing">
+              <MonthlyCarneLeaoTable rows={toBe.monthlyCarneLeao} />
+            </Section>
+          )}
 
           <Section title="Information considered" eyebrow="Inputs">
             <dl className="divide-y divide-surface-border rounded-xl border border-surface-border bg-white">
@@ -445,13 +499,42 @@ export function ImpactReportPage() {
                           <span className="mt-1 block text-xs text-navy-700/70">{item.reason}</span>
                         )}
                       </span>
-                      <StatusBadge tone={item.required ? "warning" : "neutral"}>
-                        {item.required ? "Likely required" : "Not indicated"}
+                      <StatusBadge tone={obligationBadge(item).tone}>
+                        {obligationBadge(item).label}
                       </StatusBadge>
                     </li>
                   ))}
                 </ul>
               )}
+              {toBe.obligations?.some((item) => item.probe) && (
+                <p className="mt-3 text-xs leading-relaxed text-navy-700/65">
+                  A simplified probe is a threshold check, not an official filing determination (for
+                  example CBE uses BRL proxies, not BACEN USD bands).
+                </p>
+              )}
+            </Section>
+          )}
+
+          {toBe?.declarations && toBe.declarations.length > 0 && (
+            <Section title="What you may need to declare" eyebrow="Disclosure">
+              <ul className="space-y-2">
+                {toBe.declarations.map((item) => (
+                  <li
+                    key={item.code}
+                    className="flex justify-between gap-4 rounded-lg border border-surface-border bg-white px-4 py-3 text-sm"
+                  >
+                    <span>
+                      <span className="font-medium text-navy">{item.label}</span>
+                      {item.reason && (
+                        <span className="mt-1 block text-xs text-navy-700/70">{item.reason}</span>
+                      )}
+                    </span>
+                    <StatusBadge tone={item.required ? "warning" : "neutral"}>
+                      {item.required ? "Declare" : "Not indicated"}
+                    </StatusBadge>
+                  </li>
+                ))}
+              </ul>
             </Section>
           )}
 
@@ -508,6 +591,20 @@ export function ImpactReportPage() {
           <Section title="Potential planning areas" eyebrow="Where value usually sits">
             {planning?.estimatedSavingsTeaser && (
               <p className="mb-4 text-sm text-navy-700/80">{planning.estimatedSavingsTeaser}</p>
+            )}
+            {planning?.scenarios && planning.scenarios.length > 0 && (
+              <div className="mb-6 rounded-xl border border-surface-border bg-white p-4">
+                <h3 className="text-sm font-semibold text-navy">Move-date and sale scenarios</h3>
+                <p className="mt-1 mb-3 text-xs text-navy-700/70">
+                  Each scenario re-runs the To Be engine against this inventory.
+                </p>
+                <ScenarioCompareTable
+                  scenarios={planning.scenarios}
+                  baselineTax={baselineHeadlineTax(toBe)}
+                  currency={toBe?.currency ?? "BRL"}
+                  proUnlocked={planning.proUnlocked}
+                />
+              </div>
             )}
             <div className="grid gap-3 sm:grid-cols-2">
               {(planning?.opportunities?.length
@@ -584,7 +681,7 @@ export function ImpactReportPage() {
           </Section>
         </div>
 
-        <div className="rounded-xl border border-surface-border bg-white p-6 shadow-card">
+        <div className="rounded-xl border border-surface-border bg-white p-6 shadow-card print:hidden">
           <h2 className="font-display text-xl text-navy">Hand this over to a professional</h2>
           <p className="mt-2 text-sm leading-relaxed text-navy-700/80">
             A reviewer receives your answers, your document checklist and the points flagged above,

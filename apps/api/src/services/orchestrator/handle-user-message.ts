@@ -7,7 +7,7 @@ import { handleFiscalClarify } from "./handlers/fiscal-clarify.js";
 import { handleFiscalConfirm } from "./handlers/fiscal-confirm.js";
 import { handleFiscalFieldAnswer } from "./handlers/fiscal-field-answer.js";
 import { handleHelp } from "./handlers/help.js";
-import { handleAssetScreen } from "./handlers/asset-screen.js";
+import { handleAssetScreen, handleAssetCountry } from "./handlers/asset-screen.js";
 import { handleIncomeDone } from "./handlers/income-done.js";
 import { handleIncomeFx } from "./handlers/income-fx.js";
 import { handleOffTopic } from "./handlers/off-topic.js";
@@ -38,6 +38,7 @@ const HANDLER_PIPELINE: HandlerFnLocal[] = [
   handleFiscalConfirm,
   handleRewind,
   handleAssetScreen,
+  handleAssetCountry,
   handleIncomeFx,
   handleIncomeDone,
   handleStepAdvance,

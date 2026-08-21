@@ -19,6 +19,7 @@ import {
 import {
   defaultUsFilingInputs,
   inferredUsFilingStatus,
+  isImpactMapIntake,
   isTriagePending,
   triagePromptText,
   usFilingPromptText,
@@ -346,7 +347,9 @@ export async function completeFiscalProfileAndDetermineNext(
   delete ctx[FISCAL_PROFILE_CONFIRM_PENDING_KEY];
   delete ctx._triagePending;
   delete ctx._assetScreenPending;
-  const needsUs = profile.profile === "resident_usa" || profile.profile === "dual_residence";
+  const needsUs =
+    !isImpactMapIntake(existingCtx) &&
+    (profile.profile === "resident_usa" || profile.profile === "dual_residence");
   if (needsUs && !ctx.usFilingInputs) {
     const inferred = inferredUsFilingStatus(ctx);
     if (inferred) {

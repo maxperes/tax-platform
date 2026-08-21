@@ -75,6 +75,12 @@ export function buildImpactAssessmentReport(input: {
         `Computed residency start method: **${brazilImpact.residency.method}** → ${brazilImpact.residency.brazilianTaxResidencyStartDate ?? "undetermined"}.`,
         `Estimated BR gross tax (annual incomes on file): **${brazilImpact.estimatedBrGrossTaxTotal.toFixed(2)} ${brazilImpact.currency}**.`,
         `Brazilian tax (BR-IRPF-EXT-001): **${brazilImpact.brazilianTaxTotal.toFixed(2)}**; foreign tax credit **${brazilImpact.foreignTaxCreditTotal.toFixed(2)}**; net payable **${brazilImpact.netPayableTotal.toFixed(2)}**.`,
+        brazilImpact.crossBorderComparison.usFederal
+          ? `US federal sketch (assumed single): **${brazilImpact.crossBorderComparison.usFederal.netTaxDueUsd.toFixed(2)} USD** on ${brazilImpact.crossBorderComparison.usFederal.grossIncomeUsd.toFixed(2)} USD gross.`
+          : "No US federal sketch (no US person tie or convertible income on file).",
+        brazilImpact.monthlyCarneLeao.length > 0
+          ? `Monthly carnê-leão sketch: **${brazilImpact.monthlyCarneLeao.length}** competence(s).`
+          : "No monthly carnê-leão sketch (matriz not applied).",
         `Lifecycle: **${brazilImpact.residency.lifecycleState}**. Resident from: ${brazilImpact.residency.brazilianTaxResidencyStartDate ?? "undetermined"}.`,
         brazilImpact.reliefsNote,
         "",
@@ -89,6 +95,8 @@ export function buildImpactAssessmentReport(input: {
         categoryImpacts: brazilImpact.categoryImpacts,
         obligations: brazilImpact.obligations,
         declarations: brazilImpact.declarations,
+        monthlyCarneLeao: brazilImpact.monthlyCarneLeao,
+        crossBorderComparison: brazilImpact.crossBorderComparison,
         doubleTax: brazilImpact.doubleTax,
         risks: brazilImpact.risks,
         reliabilityMatrix: brazilImpact.reliabilityMatrix

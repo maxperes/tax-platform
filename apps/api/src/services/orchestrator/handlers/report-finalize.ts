@@ -1,6 +1,7 @@
 import type { ConversationState } from "@tax-platform/shared";
 import { prisma } from "../../../db.js";
 import {
+  isImpactMapIntake,
   isProceedAnywayIntent,
   resolveIncomeGaps,
   specialistHandoffBlock
@@ -14,6 +15,7 @@ import { isShortAffirmativeAdvance, lastAssistantContent } from "../intents.js";
 import { intakeRedirectForState } from "../messages.js";
 import type { HandlerContext, HandlerResult } from "../session-context.js";
 import { enqueueAndWait, JOB_NAMES } from "../../jobs/queue.js";
+import { syncSessionToTwin } from "../../session-twin-sync.js";
 
 const SUMMARY_YES_STATES: ConversationState[] = [
   "events",
@@ -36,6 +38,17 @@ const PROCEED_ANYWAY_STATES: ConversationState[] = [
 async function finalizeReportAndComplete(
   h: HandlerContext
 ): Promise<string> {
+  if (isImpactMapIntake(h.ctx)) {
+    await syncSessionToTwin(h.session.userId, h.sessionId);
+    await prisma.conversationSession.update({
+      where: { id: h.sessionId },
+      data: { state: "complete" }
+    });
+    return (
+      `Your **360° tax map** for **${h.session.taxYear}** is ready — the same picture as the structured interview. Open **View map** in the header to see the preliminary impact report.\n\n` +
+      intakeRedirectForState("complete", h.ctx)
+    );
+  }
   await enqueueAndWait(JOB_NAMES.buildReport, {
     userId: h.session.userId,
     taxYear: h.session.taxYear

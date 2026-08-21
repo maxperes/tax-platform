@@ -147,9 +147,11 @@ export type SessionFactsInput = {
   trusts?: SessionTrustFact[];
   /** Asset category tokens collected in copilot screening (interview ASSET_OPTIONS values). */
   assetTypeHints?: string[];
+  /** Country per interview asset category (ISO or interview code), from copilot follow-up. */
+  assetCountries?: Record<string, string>;
 };
 
-function isoToInterviewCountry(iso?: string): string {
+export function isoToInterviewCountry(iso?: string): string {
   if (!iso) return "other";
   const upper = iso.toUpperCase().slice(0, 2);
   if (upper === "GB") return "uk";
@@ -357,14 +359,22 @@ function mapIncomesToAnswers(incomes: SessionIncomeFact[]): InterviewAnswers {
 
 function mapAssetsToAnswers(
   assets: SessionAssetFact[],
-  trusts: SessionTrustFact[]
+  trusts: SessionTrustFact[],
+  extraCountries?: Record<string, string>
 ): InterviewAnswers {
   const answers: InterviewAnswers = {};
   const types = new Set<string>();
   for (const asset of assets) {
-    types.add(mapAssetTypeToInterview(asset.assetType));
+    const type = mapAssetTypeToInterview(asset.assetType);
+    types.add(type);
+    const country = asset.country ?? extraCountries?.[type];
+    if (country) answers[`asset_${type}_country`] = isoToInterviewCountry(country);
   }
   if (trusts.length > 0) types.add("trust_interests");
+  for (const [type, country] of Object.entries(extraCountries ?? {})) {
+    types.add(type);
+    if (country) answers[`asset_${type}_country`] = isoToInterviewCountry(country);
+  }
   if (types.size > 0) answers.asset_types = Array.from(types);
   return answers;
 }
@@ -379,7 +389,8 @@ export function sessionFactsToInterviewRecord(input: SessionFactsInput): Intervi
         ...(input.assets ?? []),
         ...(input.assetTypeHints ?? []).map((assetType) => ({ assetType }))
       ],
-      input.trusts ?? []
+      input.trusts ?? [],
+      input.assetCountries
     )
   };
 

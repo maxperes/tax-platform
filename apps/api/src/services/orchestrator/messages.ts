@@ -15,10 +15,10 @@ import {
   loadIntakeModulePlan,
   nextActionsBlock,
   resolveIncomeGaps,
-  triagePromptText,
   usFilingPromptText,
   usFilingStatusLabel
 } from "../intake-helpers.js";
+import { firstFiscalFieldPrompt } from "../fiscal-intake.js";
 import { getLatestTaxCalculationSnapshot } from "../tax-pipeline.js";
 import {
   describeFiscalProfileForRecap,
@@ -32,8 +32,8 @@ export { describeFiscalProfileForRecap };
 
 export function initialAssistantMessage(taxYear: number): string {
   return (
-    `Hi — I will collect the same facts as the structured interview so we can build your **${taxYear} 360° tax map**. Filing detail is optional after that.\n\n` +
-    triagePromptText()
+    `Hi — I will ask the **same questions as the structured interview** so we can build your **${taxYear} 360° tax map**. Approximate answers are enough.\n\n` +
+    firstFiscalFieldPrompt()
   );
 }
 
@@ -45,7 +45,10 @@ export function intakeRedirectForState(state: ConversationState, context: Record
     return `Now, let's continue: ${getFiscalResidenceCurrentQuestion(context)}`;
   }
   if (state === "income_capture") {
-    return "Add each income with **amount**, **currency**, and **date** (or **per month**). Example: **`10900 USD 2026-01-31`**. Name the type when you can (salary, pension, dividends). Say **that's all** when you are done.";
+    return (
+      "Which **income categories** did you receive this year (salary, self-employment, Social Security, pension, dividends, interest, capital gains, rental, RSUs, crypto, …)?\n\n" +
+      "For each category, an **approximate annual amount**, **currency**, **country**, and whether tax was withheld is enough — the same as the interview. Example: **US salary about 100000 USD, tax withheld 20000**. Say **that's all** when you are done."
+    );
   }
   if (state === "events") {
     return "Check the income classification below. If it looks right, say **looks correct** or **yes**. To change a source, say **go back to income**.";
@@ -96,10 +99,10 @@ export function intakeRedirectForState(state: ConversationState, context: Record
     );
   }
   if (state === "report") {
-    return "When you are ready, say **generate the report**. That saves a draft summary you can download.";
+    return "When you are ready, say **that's all** or **show my map**. That saves your 360° tax map — the same deliverable as the interview.";
   }
   if (state === "complete") {
-    return "You're done with this year's intake. To change something, say **go back to income**. After edits, say **regenerate the report**.";
+    return "You're done with this year's map intake. Open **View map** for the preliminary impact report. To change something, say **go back to income**.";
   }
   return `Current step: **${state}**. Please continue with the information requested for this step.`;
 }
@@ -121,12 +124,12 @@ export async function incomeCheckpointMessage(userId: string, taxYear: number): 
   });
 
   const cta =
-    "**Add more** with a line like **`10900 USD 2026-01-31`** or **`10900 USD per month`** for monthly gross (if you omit a date we anchor to January of this tax year). Say **that's all** when you are finished.\n\n" +
+    "**Add more** the way the interview does: category, approximate **annual** amount, currency, and country (a payment date helps split the year). Example: **US salary 100000 USD, withheld 20000**. Say **that's all** when you are finished.\n\n" +
     "To edit rows in a **table**, open the **income form** in the app.";
 
   if (rows.length === 0) {
     return (
-      `**Income for your 360° map:** which categories did you receive this year (salary, self-employment, Social Security, pensions, dividends, interest, capital gains, rental, RSUs, crypto, …)? Add each source with amount, currency, and date — and say if tax was withheld abroad.\n\n${cta}\n\n_Income on file: **0** rows._`
+      `**Income for your 360° map:** which categories did you receive this year (salary, self-employment, Social Security, pensions, dividends, interest, capital gains, rental, RSUs, crypto, …)? Give an approximate annual amount, currency, and country — the same facts as the interview.\n\n${cta}\n\n_Income on file: **0** rows._`
     );
   }
 

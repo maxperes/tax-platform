@@ -48,6 +48,10 @@
     background: white;
     color: black;
   }
+
+  .shadow-card {
+    box-shadow: none !important;
+  }
 }
 
 .chat-scrollbar {

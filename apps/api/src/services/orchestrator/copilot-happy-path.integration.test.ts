@@ -167,6 +167,16 @@ vi.mock("../../config.js", () => ({
   }
 }));
 
+vi.mock("../session-twin-sync.js", () => ({
+  syncSessionToTwin: vi.fn(async () => ({
+    twinId: "twin-test",
+    taxYear: 2026,
+    answerCount: 4,
+    projectedKeys: [],
+    assessmentComplete: true
+  }))
+}));
+
 vi.mock("../jobs/queue.js", () => ({
   JOB_NAMES: {
     buildReport: "build-report",
@@ -196,8 +206,9 @@ vi.mock("../llm.js", () => ({
 
 import { handleUserMessage } from "./handle-user-message.js";
 import { enqueueAndWait } from "../jobs/queue.js";
-import { getActiveFiscalFieldOrder, isValidFiscalFieldValue } from "../fiscal-intake.js";
+import { firstFiscalFieldPrompt, getActiveFiscalFieldOrder, isValidFiscalFieldValue } from "../fiscal-intake.js";
 import { resolveFiscalFieldBeingAsked } from "./fiscal-orchestration.js";
+import { syncSessionToTwin } from "../session-twin-sync.js";
 
 /** Canned answers keyed by fiscal field. Fail the walk if a new field is added without a fixture. */
 const FISCAL_ANSWERS: Record<string, string> = {
@@ -236,17 +247,22 @@ function seedSession(overrides: Partial<SessionRow> = {}) {
     userId: "user-1",
     taxYear: 2026,
     state: "fiscal_residence",
-    contextJson: { _triagePending: true },
+    contextJson: { intakeGoal: "impact_map" },
     requiresAdditionalReview: false,
     ...overrides
   };
-  store.messages = [{ role: "assistant", content: "Welcome", createdAt: new Date() }];
+  store.messages = [{ role: "assistant", content: firstFiscalFieldPrompt(), createdAt: new Date() }];
   store.incomes = [];
   store.fiscalProfile = null;
   loop.turns = 0;
   loop.fingerprints = new Map();
   loop.visitedStates = [((overrides.state ?? "fiscal_residence") as ConversationState)];
   loop.askedFiscalKeys = [];
+}
+
+function seedTriageSession() {
+  seedSession({ contextJson: { _triagePending: true } });
+  store.messages = [{ role: "assistant", content: "What should we focus on first this year? Reply with 1, 2, 3, or 4.", createdAt: new Date() }];
 }
 
 function sessionCtx(): Record<string, unknown> {
@@ -356,7 +372,27 @@ describe("copilot chained happy path", () => {
     seedSession();
   });
 
+  it("walks impact_map from first interview question through the tax map", async () => {
+    await answerAllFiscalFields();
+    expect(loop.askedFiscalKeys).toEqual(expectedFiscalKeys());
+
+    await captureBrlIncomeAndAssets();
+
+    const done = await say("yes looks correct");
+    expect(done.sessionState).toBe("complete");
+    expect(done.assistantText).toMatch(/360° tax map/i);
+    expect(syncSessionToTwin).toHaveBeenCalled();
+    expect(enqueueAndWait).not.toHaveBeenCalled();
+    expect(loop.visitedStates).toEqual([
+      "fiscal_residence",
+      "income_capture",
+      "events",
+      "complete"
+    ]);
+  });
+
   it("walks foreign_salary from triage through report complete", async () => {
+    seedTriageSession();
     await answerTriage("1");
     await answerAllFiscalFields();
     expect(loop.askedFiscalKeys).toEqual(expectedFiscalKeys());
@@ -384,6 +420,7 @@ describe("copilot chained happy path", () => {
   });
 
   it("walks full_annual through every module step", async () => {
+    seedTriageSession();
     await answerTriage("4");
     await answerAllFiscalFields();
     await captureBrlIncomeAndAssets();
@@ -425,6 +462,7 @@ describe("copilot chained stuck and skip regressions", () => {
   });
 
   it("re-asks immigration after yes/no, then accepts a category", async () => {
+    seedTriageSession();
     await answerTriage("1");
     while (resolveFiscalFieldBeingAsked(sessionCtx(), lastAssistant()) !== "immigrationStatus") {
       const key = resolveFiscalFieldBeingAsked(sessionCtx(), lastAssistant());
@@ -445,6 +483,7 @@ describe("copilot chained stuck and skip regressions", () => {
   });
 
   it("does not block that's all when a non-PTAX currency has no rate (preview)", async () => {
+    seedTriageSession();
     await answerTriage("1");
     await answerAllFiscalFields();
 
@@ -459,6 +498,7 @@ describe("copilot chained stuck and skip regressions", () => {
   });
 
   it("does not complete report on yes without a summary offer, then generate the report does", async () => {
+    seedTriageSession();
     await answerTriage("1");
     await answerAllFiscalFields();
     await captureBrlIncomeAndAssets();
@@ -476,21 +516,21 @@ describe("copilot chained stuck and skip regressions", () => {
   });
 
   it("advances _lastAskedKey after a valid country answer", async () => {
-    await answerTriage("1");
-    expect(resolveFiscalFieldBeingAsked(sessionCtx(), lastAssistant())).toBe("physicallyLivesInBrazil");
+    expect(resolveFiscalFieldBeingAsked(sessionCtx(), lastAssistant())).toBe("nationalityCountry");
 
-    const inBrazil = await say("yes");
-    expect(inBrazil.sessionState).toBe("fiscal_residence");
-    expect(isValidFiscalFieldValue("physicallyLivesInBrazil", inBrazil.ctx.physicallyLivesInBrazil)).toBe(true);
-    expect(inBrazil.ctx._lastAskedKey).toBe("brazilStaysText");
+    const citizenship = await say("United States");
+    expect(citizenship.sessionState).toBe("fiscal_residence");
+    expect(isValidFiscalFieldValue("nationalityCountry", citizenship.ctx.nationalityCountry)).toBe(true);
+    expect(citizenship.ctx._lastAskedKey).toBe("currentResidenceCountry");
 
-    const next = await say("2024-01-01, 2024-06-01");
+    const next = await say("Brazil");
     expect(next.sessionState).toBe("fiscal_residence");
-    expect(next.ctx._lastAskedKey).toBe("currentResidenceCountry");
-    expect(resolveFiscalFieldBeingAsked(next.ctx, next.assistantText)).toBe("currentResidenceCountry");
+    expect(next.ctx._lastAskedKey).toBe("physicallyLivesInBrazil");
+    expect(resolveFiscalFieldBeingAsked(next.ctx, next.assistantText)).toBe("physicallyLivesInBrazil");
   });
 
   it("keeps triage pending on unparseable input without looping", async () => {
+    seedTriageSession();
     const first = await say("asdf");
     expect(first.ctx._triagePending).toBe(true);
     expect(first.sessionState).toBe("fiscal_residence");

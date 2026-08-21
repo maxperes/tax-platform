@@ -33,7 +33,7 @@ export async function handleHelp(h: HandlerContext): Promise<HandlerResult> {
     const checkpoint = await incomeCheckpointMessage(h.session.userId, h.session.taxYear);
     body =
       `**Help — income**\n\n` +
-      "Add lines like **`10900 USD 2026-01-31`** or **`5000 USD per month`**. " +
+      "Add the same facts as the interview: category, approximate **annual** amount, currency, and country. " +
       "Open the **income table** below for structured entry. Say **that's all** when finished.\n\n" +
       checkpoint;
   } else if (state === "deductions") {

@@ -5,6 +5,7 @@ import {
   isCapitalGainSkipIntent,
   isDomainStepSkipIntent,
   isEventsConfirmIntent,
+  isImpactMapIntake,
   isMonthlyCalcConfirmIntent,
   loadIntakeModulePlan,
   nextStateAfterCapitalGain,
@@ -23,6 +24,7 @@ import {
 } from "../intents.js";
 import { intakeRedirectForState } from "../messages.js";
 import type { HandlerContext, HandlerResult } from "../session-context.js";
+import { syncSessionToTwin } from "../../session-twin-sync.js";
 
 export async function handleStepAdvance(h: HandlerContext): Promise<HandlerResult> {
   const state = h.session.state as ConversationState;
@@ -30,12 +32,29 @@ export async function handleStepAdvance(h: HandlerContext): Promise<HandlerResul
   if (state === "events" && isEventsConfirmIntent(h.userContent)) {
     const plan = await loadIntakeModulePlan(h.session.userId, h.session.taxYear, h.ctx);
     const next = nextStateAfterEvents(plan);
+    if (next === "report" && isImpactMapIntake(h.ctx)) {
+      await syncSessionToTwin(h.session.userId, h.sessionId);
+      await prisma.conversationSession.update({
+        where: { id: h.sessionId },
+        data: { state: "complete" }
+      });
+      return {
+        assistantText:
+          `Thanks — that income classification looks right.\n\n` +
+          `Your **360° tax map** for **${h.session.taxYear}** is ready. Open **View map** in the header to see the preliminary impact report.\n\n` +
+          intakeRedirectForState("complete", h.ctx)
+      };
+    }
     await prisma.conversationSession.update({
       where: { id: h.sessionId },
       data: { state: next }
     });
     const skipCgNote =
-      next === "deductions" ? "Capital gains are skipped for your intake focus.\n\n" : "";
+      next === "report"
+        ? "That is enough for the 360° map.\n\n"
+        : next === "deductions"
+          ? "Capital gains are skipped for your intake focus.\n\n"
+          : "";
     return {
       assistantText:
         `Thanks — that income classification looks right.\n\n${skipCgNote}` +

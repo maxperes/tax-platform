@@ -114,10 +114,9 @@ function hintsForState(state: ConversationState, taxYear: number): string[] {
   }
   if (state === "income_capture") {
     hints.push(
-      "One payment per submit_income_source call; do not merge multiple dates/amounts.",
+      "Collect the same facts as the structured interview: income categories, approximate annual amount, currency, origin country, withholding, and a payment date when known.",
       `paymentDate must be YYYY-MM-DD in ${taxYear} when representative.`,
-      "Ask whether foreign tax was withheld for foreign sources.",
-      'If the user is done listing income, advance to "events".'
+      'If the user is done listing income, advance to "events" after the asset-category screen.'
     );
   }
   if (state === "events") {

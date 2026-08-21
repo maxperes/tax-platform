@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetScreenPromptText, parseAssetScreenAnswer } from "./asset-screen.js";
+import { assetCountryPrompt, assetScreenPromptText, parseAssetScreenAnswer } from "./asset-screen.js";
 
 describe("assetScreenPromptText", () => {
   it("asks for numbered choices instead of option ids", () => {
@@ -26,5 +26,14 @@ describe("parseAssetScreenAnswer", () => {
   it("still accepts labels and option ids", () => {
     expect(parseAssetScreenAnswer("brokerage, real_estate")).toEqual(["brokerage", "real_estate"]);
     expect(parseAssetScreenAnswer("crypto")).toEqual(["crypto_assets"]);
+  });
+});
+
+describe("assetCountryPrompt", () => {
+  it("asks for a country in interview language", () => {
+    const text = assetCountryPrompt("brokerage");
+    expect(text).toMatch(/Brokerage/);
+    expect(text).toMatch(/United States/);
+    expect(text).not.toMatch(/brokerage accounts_/);
   });
 });

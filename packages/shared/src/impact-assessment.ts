@@ -130,6 +130,53 @@ export const situationSummarySchema = z.object({
 
 export type SituationSummary = z.infer<typeof situationSummarySchema>;
 
+/** Monthly carnê-leão / DARF sketch from BR-IRPF-EXT-001 — orientation, not a payment slip. */
+export const monthlyCarneLeaoSketchSchema = z.object({
+  taxMonth: z.string().regex(/^\d{4}-\d{2}$/),
+  taxableBaseBrl: z.number().nonnegative(),
+  taxComputedBrl: z.number().nonnegative(),
+  creditAppliedBrl: z.number().nonnegative(),
+  netDueBrl: z.number().nonnegative(),
+  dueDate: z.string(),
+  probe: z.boolean().optional()
+});
+
+export type MonthlyCarneLeaoSketch = z.infer<typeof monthlyCarneLeaoSketchSchema>;
+
+export const usFederalSketchSchema = z.object({
+  grossIncomeUsd: z.number().nonnegative(),
+  netTaxDueUsd: z.number().nonnegative(),
+  taxCreditAppliedUsd: z.number().nonnegative(),
+  filingStatusAssumed: z.string(),
+  note: z.string()
+});
+
+export type UsFederalSketch = z.infer<typeof usFederalSketchSchema>;
+
+export const crossBorderComparisonSchema = z.object({
+  applicable: z.boolean(),
+  usFederal: usFederalSketchSchema.optional(),
+  brazil: z.object({
+    taxBrl: z.number().nonnegative(),
+    ftcBrl: z.number().nonnegative(),
+    netPayableBrl: z.number().nonnegative()
+  }),
+  notes: z.string()
+});
+
+export type CrossBorderComparison = z.infer<typeof crossBorderComparisonSchema>;
+
+export const planningScenarioSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  description: z.string(),
+  estimatedBrTaxDelta: z.number(),
+  notes: z.array(z.string()),
+  proOnly: z.boolean()
+});
+
+export type PlanningScenario = z.infer<typeof planningScenarioSchema>;
+
 export const documentKindSchema = z.enum([
   "passport",
   "bank_statement",

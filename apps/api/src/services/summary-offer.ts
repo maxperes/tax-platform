@@ -51,7 +51,10 @@ export function isExplicitGenerateReportIntent(userContent: string): boolean {
     /\b(new|another|fresh)\s+summary\b/i.test(lower) ||
     /\b(generat(e|ing|ed)?|generae)\b.*\bsummary\b/i.test(lower) ||
     /\bsummary\b.*\b(again|new|another|fresh)\b/i.test(lower) ||
-    /\brefresh\s+(the\s+)?(report|summary)\b/i.test(lower)
+    /\brefresh\s+(the\s+)?(report|summary)\b/i.test(lower) ||
+    /\bshow\s+(me\s+)?(my\s+)?(the\s+)?(tax\s+)?map\b/i.test(lower) ||
+    /\bview\s+(my\s+)?(the\s+)?(360|tax\s+)?map\b/i.test(lower) ||
+    /\bopen\s+(my\s+)?(the\s+)?(tax\s+)?map\b/i.test(lower)
   );
 }
 

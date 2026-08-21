@@ -1,8 +1,10 @@
 import type {
   CategoryImpactRow,
+  CrossBorderComparison,
   DeclarationItem,
   DoubleTaxItem,
   ExplanationChain,
+  MonthlyCarneLeaoSketch,
   ObligationItem,
   ReliabilityStamp,
   RiskItem,
@@ -14,9 +16,11 @@ import type {
 import { brRulePack2026 } from "../data/br/2026.js";
 import { findRulesByTag, stampFromRules } from "../legal/reliability.js";
 import { getBrLegalRules, LEGAL_RULE_PACK_ID } from "../legal/packs/br-2026.js";
-import { applyBrIrpfExt001 } from "../legal/matriz/br-irpf-ext-001.js";
+import { applyBrIrpfExt001, type IrpfExt001Result } from "../legal/matriz/br-irpf-ext-001.js";
 import { convertToBrlCamBio001 } from "../legal/matriz/br-cambio-001.js";
+import { lookupPtaxToBrl } from "../ptax.js";
 import { computeAggregatedGrossBrTax, grossRegimeFor } from "./gross-br-tax.js";
+import { buildUsAnnualEstimate } from "./us.js";
 import {
   computeBrazilianResidencyStart,
   hasBrazilVitalInterestConflict,
@@ -43,6 +47,8 @@ export type ToBeImpactResult = {
   foreignTaxCreditTotal: number;
   netPayableTotal: number;
   situationSummary: SituationSummary;
+  monthlyCarneLeao: MonthlyCarneLeaoSketch[];
+  crossBorderComparison: CrossBorderComparison;
   currency: "BRL";
   applyReliefs: boolean;
   reliefsNote: string;
@@ -53,6 +59,94 @@ export type ToBeImpactResult = {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+function incomeAmountUsd(line: TwinIncomeLine, asOf: string): number {
+  if (line.currency.toUpperCase() === "USD") return line.annualAmount;
+  const cambio = convertToBrlCamBio001({
+    valor: line.annualAmount,
+    moeda: line.currency,
+    dataDisponibilidade: line.paymentDate ?? asOf
+  });
+  const usdBrl = lookupPtaxToBrl("USD", line.paymentDate ?? asOf);
+  if (!usdBrl || usdBrl <= 0 || cambio.valorBrl <= 0) return 0;
+  return round2(cambio.valorBrl / usdBrl);
+}
+
+function hasUsPersonTie(inventory: TwinInventory): boolean {
+  if (inventory.residency.currentlyFiscalResidentUSA) return true;
+  if (
+    inventory.countryFootprint.some((row) => {
+      const us = row.country.toUpperCase() === "US" || row.country.toUpperCase() === "USA";
+      return us && Boolean(row.hasCitizenship || row.hasTaxResidency || row.hasGreenCard);
+    })
+  ) {
+    return true;
+  }
+  return inventory.incomes.some((line) => line.originCountry.toUpperCase() === "US");
+}
+
+function buildMonthlyCarneLeaoSketch(matriz: IrpfExt001Result | null): MonthlyCarneLeaoSketch[] {
+  if (!matriz) return [];
+  return matriz.months.map((month) => ({
+    taxMonth: month.competencia,
+    taxableBaseBrl: round2(month.base_calculo_brl),
+    taxComputedBrl: round2(month.imposto_apurado_brl),
+    creditAppliedBrl: round2(month.credito_exterior_aplicado_brl),
+    netDueBrl: round2(month.imposto_a_recolher_brl),
+    dueDate: month.vencimento,
+    probe: true
+  }));
+}
+
+function buildCrossBorderComparison(input: {
+  inventory: TwinInventory;
+  asOf: string;
+  brazilianTax: number;
+  ftcBrl: number;
+  netPayableBrl: number;
+}): CrossBorderComparison {
+  const brazil = {
+    taxBrl: input.brazilianTax,
+    ftcBrl: input.ftcBrl,
+    netPayableBrl: input.netPayableBrl
+  };
+  const notes =
+    "US and Brazilian figures are not a single combined bill. US persons generally remain taxable in the US. Whether Brazilian tax is creditable on Form 1116 depends on source — not modeled here.";
+  if (!hasUsPersonTie(input.inventory)) {
+    return { applicable: false, brazil, notes };
+  }
+  const taxYear = Number(input.asOf.slice(0, 4)) || new Date().getUTCFullYear();
+  const grossIncomeUsd = round2(
+    input.inventory.incomes.reduce((sum, line) => sum + incomeAmountUsd(line, input.asOf), 0)
+  );
+  if (grossIncomeUsd <= 0) {
+    return {
+      applicable: true,
+      brazil,
+      notes: `${notes} No USD-convertible income on file for a US estimate.`
+    };
+  }
+  const estimate = buildUsAnnualEstimate({
+    taxYear,
+    grossIncomeUsd,
+    deductionsUsd: 0,
+    exemptionsUsd: 0,
+    filingStatus: "single",
+    requiresAdditionalReview: true
+  });
+  return {
+    applicable: true,
+    usFederal: {
+      grossIncomeUsd,
+      netTaxDueUsd: round2(estimate.netTaxDue),
+      taxCreditAppliedUsd: round2(estimate.taxCreditApplied ?? 0),
+      filingStatusAssumed: "single",
+      note: "US federal estimate on income on file, filing status assumed single, standard deduction only. Not a Form 1040."
+    },
+    brazil,
+    notes
+  };
 }
 
 function availabilityDate(
@@ -650,6 +744,15 @@ export function buildToBeImpact(input: {
     requiredFilings
   };
 
+  const monthlyCarneLeao = buildMonthlyCarneLeaoSketch(matriz);
+  const crossBorderComparison = buildCrossBorderComparison({
+    inventory: asIs.inventory,
+    asOf,
+    brazilianTax: brazilianTaxTotal,
+    ftcBrl: foreignTaxCreditTotal,
+    netPayableBrl: netPayableTotal
+  });
+
   return {
     hypothesisResidencyDate: input.hypothesisResidencyDate,
     residency,
@@ -663,6 +766,8 @@ export function buildToBeImpact(input: {
     foreignTaxCreditTotal,
     netPayableTotal,
     situationSummary,
+    monthlyCarneLeao,
+    crossBorderComparison,
     currency: "BRL",
     applyReliefs,
     reliefsNote: applyReliefs

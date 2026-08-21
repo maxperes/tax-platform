@@ -76,6 +76,14 @@ function parseNumberedChoice(text: string, options: { id: string }[]): string | 
 
 const FISCAL_CORE_FIELDS: FiscalFieldDef[] = [
   {
+    key: "nationalityCountry",
+    prompt: "What is your country of citizenship / nationality? (e.g. United States or US)"
+  },
+  {
+    key: "currentResidenceCountry",
+    prompt: "Where do you actually live today? Reply with a country name or ISO code (e.g. Brazil or BR)."
+  },
+  {
     key: "physicallyLivesInBrazil",
     prompt: "Are you currently in Brazil? (yes/no)"
   },
@@ -83,26 +91,6 @@ const FISCAL_CORE_FIELDS: FiscalFieldDef[] = [
     key: "brazilStaysText",
     prompt:
       "Record your Brazil entry and exit dates. List every stay in the last couple of years — one stay per line: **ENTRY YYYY-MM-DD, EXIT YYYY-MM-DD** (write **ongoing** if still in Brazil). Example:\n2024-03-01, 2024-06-15\n2024-09-01, ongoing"
-  },
-  {
-    key: "currentResidenceCountry",
-    prompt: "Where do you actually live today? Reply with a country name or ISO code (e.g. Brazil or BR)."
-  },
-  {
-    key: "nationalityCountry",
-    prompt: "What is your country of citizenship / nationality? (e.g. United States or US)"
-  },
-  {
-    key: "isFiscalResidentBrazil",
-    prompt: "Do you consider yourself a tax resident of Brazil? (yes/no)"
-  },
-  {
-    key: "isFiscalResidentUSA",
-    prompt: "Do you consider yourself a tax resident of the United States? (yes/no)"
-  },
-  {
-    key: "fiscalResidenceOtherCountry",
-    prompt: "Could another country besides Brazil and the US treat you as a tax resident? (yes/no)"
   }
 ];
 
@@ -129,6 +117,19 @@ const FISCAL_MAP_FIELDS: FiscalFieldDef[] = [
     key: "declaredPermanentExitBrazil",
     prompt:
       "Have you filed a Brazilian permanent exit declaration (saída definitiva)? Reply **yes**, **no**, or **not applicable**."
+  },
+  {
+    key: "isFiscalResidentBrazil",
+    prompt:
+      "Could Brazil treat you as a tax resident? (yes/no) — more than one country can claim you at the same time."
+  },
+  {
+    key: "isFiscalResidentUSA",
+    prompt: "Could the United States treat you as a tax resident? (yes/no)"
+  },
+  {
+    key: "fiscalResidenceOtherCountry",
+    prompt: "Could another country besides Brazil and the US treat you as a tax resident? (yes/no)"
   },
   {
     key: "maritalStatus",
